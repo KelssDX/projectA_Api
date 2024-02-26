@@ -1,0 +1,79 @@
+CREATE TABLE Accounts (
+	User_ID serial PRIMARY KEY,
+	Username VARCHAR ( 50 ),
+	Password VARCHAR ( 50 ) NOT NULL,
+	FirstName VARCHAR (50), 
+	Email VARCHAR ( 255 ) UNIQUE NOT NULL,
+	Created_on TIMESTAMP NOT NULL,
+    Last_Login TIMESTAMP,
+	IsActive VARCHAR (30)
+);
+
+
+CREATE TABLE Roles (
+	Role_ID serial PRIMARY KEY,
+	RoleName VARCHAR ( 255 ) NOT NULL,
+	Role_description VARCHAR ( 255 )
+	
+);
+
+CREATE TABLE RolesJoin (
+	User_Role_ID serial PRIMARY KEY,
+	User_ID INT,
+	Role_ID INT
+	
+);
+
+
+CREATE TABLE Permissions (
+	Permission_ID serial PRIMARY KEY,
+	Permission_Name VARCHAR (50 ) NOT NULL,
+	Permission_Description VARCHAR ( 255 )
+	
+);
+
+CREATE TABLE AuditLog (
+	Log_ID serial PRIMARY KEY,
+	User_ID INT,
+	Activity_Type VARCHAR( 255 ),
+	Audit_Time Timestamp,
+	Description VARCHAR ( 255 )
+);
+
+	CREATE TABLE Token (
+	Token_ID serial PRIMARY KEY,
+    Token_Value VARCHAR (50), 
+    Expiry_Date timestamp	
+		
+);
+
+	CREATE TABLE Authentication (
+	User_ID serial PRIMARY KEY,
+    Method VARCHAR (30), 
+    Verification_Code INT,	
+	Expiry_Date timestamp		
+);
+
+
+	CREATE TABLE RiskAssessment (
+    RiskAssessment_RefID serial PRIMARY KEY ,
+    BusinessObjectives VARCHAR ( 50 ),
+    MainProcess VARCHAR ( 50 ),
+    SubProcess VARCHAR ( 50 ),
+    KeyRiskAndFactors VARCHAR ( 50 ),
+    MitigatingControls VARCHAR ( 50 ),
+    Responsibility VARCHAR ( 50 ),
+    Authoriser VARCHAR ( 50 ),
+    AuditorsRecommendedActionPlan VARCHAR ( 50 ),
+    ResponsiblePerson VARCHAR ( 50 ),
+    AgreedDate timestamp,
+    RiskLikelihoodId INT,
+    RiskImpactId INT,
+    KeySecondaryId INT,
+    RiskCategoryId INT,
+    DataFrequencyId INT,
+    FrequencyId INT,
+    EvidenceId INT,
+    OutcomeLikelihoodId INT,
+    ImpactId INT	
+);
