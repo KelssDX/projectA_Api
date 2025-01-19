@@ -24,8 +24,9 @@ namespace Affine.Engine.Repository.Identity
             using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
             dbConnection.Open();
 
-            string query = @"SELECT * FROM Users 
-                             WHERE Email = @Email AND Password = @Password";
+            string query = @"
+                             SELECT * FROM accounts 
+                             WHERE email = @Email AND password = @Password;";
 
             return dbConnection.QueryFirstOrDefault<User>(query, new { Email = email, Password = password });
         }

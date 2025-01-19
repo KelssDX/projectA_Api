@@ -1,5 +1,6 @@
 using Affine.Engine.Repository.Identity;
 using Microsoft.OpenApi.Models;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,9 +12,15 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Your API", Version = "v1" });
 });
 
-// Add scoped dependency injection for IUserRepository and UserRepository
+// Create a NpgsqlConnectionStringBuilder to construct the connection string
+var connectionStringBuilder = new NpgsqlConnectionStringBuilder(builder.Configuration.GetConnectionString("RiskAssessment"));
+
+// Add the schema or search path settings directly to the connection string
+connectionStringBuilder.SearchPath = "\"Risk_Assess_Framework\",public,\"$user\"";
+
+// Add scoped dependency injection for IUserRepository and UserRepository with the modified connection string
 builder.Services.AddScoped<IUserRepository, UserRepository>(provider =>
-    new UserRepository(builder.Configuration.GetConnectionString("PostgressDB")));
+    new UserRepository(connectionStringBuilder.ToString()));
 
 builder.Services.AddControllers();
 

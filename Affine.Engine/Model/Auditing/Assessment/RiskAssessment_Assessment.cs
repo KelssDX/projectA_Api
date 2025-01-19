@@ -1,41 +1,41 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Affine.Engine.Model.Auditing.Assessment
 {
     public class RiskAssessment_Assessment
     {
-        public ProcessObjectives_Assessment ProcessObjectivesAssessment { get; set; }
-        public Risks_Assessment RisksAssessment { get; set; }   
-        public Controls_Assessment Controls_Assessment { get; set; }
-        public  Outcome_Assessment OutcomeAssessment { get; set; }  
-    }
+        // Reference Information
+        public int ReferenceId { get; set; }
+        public string Client { get; set; }
+        public string AssessmentPeriod { get; set; }
+        public string Assessor { get; set; }
+        public string ApprovedBy { get; set; }
 
-    public class RiskAssessmentCreateRequest
-    {
-        public int Id { get; set; }
-        public int RiskAssessment_RefID { get; set; }
-        public string BusinessObjectives { get; set; }
-        public string MainProcess { get; set; }
-        public string SubProcess { get; set; }
-        public string KeyRiskAndFactors { get; set; }
-        public string MitigatingControls { get; set; }
-        public string Responsibility { get; set; }
-        public string Authoriser { get; set; }
-        public string AuditorsRecommendedActionPlan { get; set; }
-        public string ResponsiblePerson { get; set; }
-        public DateTime? AgreedDate { get; set; }
-        public int? RiskLikelihoodId { get; set; }
-        public int? RiskImpactId { get; set; }
-        public int? KeySecondaryId { get; set; }
-        public int? RiskCategoryId { get; set; }
-        public int? DataFrequencyId { get; set; }
-        public int? FrequencyId { get; set; }
-        public int? EvidenceId { get; set; }
-        public int? OutcomeLikelihoodId { get; set; }
-        public int? ImpactId { get; set; }
+        // Process Objectives Assessment
+        public string ProcessObjectivesAssessment_BusinessObjectives { get; set; }
+        public string ProcessObjectivesAssessment_MainProcess { get; set; }
+        public string ProcessObjectivesAssessment_SubProcess { get; set; }
+
+        // Risks Assessment
+        public string RisksAssessment_KeyRiskAndFactors { get; set; }
+        public string RisksAssessment_RiskLikelihood { get; set; }
+        public string RisksAssessment_RiskImpact { get; set; }
+        public string RisksAssessment_KeyOrSecondary { get; set; }
+        public string RisksAssessment_RiskCategory { get; set; }
+
+        // Controls Assessment
+        public string ControlsAssessment_MitigatingControls { get; set; }
+        public string ControlsAssessment_Responsibility { get; set; }
+        public string ControlsAssessment_DataFrequency { get; set; }
+        public string ControlsAssessment_Frequency { get; set; }
+
+        // Outcome Assessment
+        public string OutcomeAssessment_Evidence { get; set; }
+        public string OutcomeAssessment_Authoriser { get; set; }
+        public string OutcomeAssessment_AuditorsRecommendedActionPlan { get; set; }
+        public string OutcomeAssessment_ResponsiblePerson { get; set; }
+        public DateTime? OutcomeAssessment_AgreedDate { get; set; }
+        public string OutcomeAssessment_OutcomeLikelihood { get; set; }
+        public string OutcomeAssessment_Impact { get; set; }
     }
 }
