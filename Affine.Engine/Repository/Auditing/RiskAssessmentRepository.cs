@@ -1,9 +1,11 @@
-﻿using Affine.Engine.Model.Auditing.Assessment;
+using Affine.Engine.Model.Auditing.Assessment;
 using Dapper;
 using Npgsql;
 using System.Collections.Generic;
 using System.Data;
 using System.Threading.Tasks;
+using System.Linq;
+using System;
 
 namespace Affine.Engine.Repository.Auditing
 {
@@ -13,59 +15,83 @@ namespace Affine.Engine.Repository.Auditing
 
         public RiskAssessmentRepository(string connectionString)
         {
-            _connectionString = connectionString;
+            _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         }
 
         #region #DropDowns
 
         public async Task<Risks_Assessment> GetRisksAsync(string email, string password)
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-             dbConnection.Open();
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
 
-            string query = @"
-                SELECT 
-                    NULL AS KeyRiskAndFactors,
-                    (SELECT ARRAY_AGG(description) FROM RA_RiskLikelihood) AS RiskLikelihood,
-                    (SELECT ARRAY_AGG(description) FROM RA_RiskImpact) AS RiskImpact,
-                    (SELECT ARRAY_AGG(description) FROM RA_KeySecondary) AS KeyOrSecondary,
-                    (SELECT ARRAY_AGG(description) FROM RA_RiskCategory) AS RiskCategory;";
+                string query = @"
+                    SELECT 
+                        NULL AS KeyRiskAndFactors,
+                        (SELECT ARRAY_AGG(description) FROM ra_risklikelihood) AS RiskLikelihood,
+                        (SELECT ARRAY_AGG(description) FROM ra_riskimpact) AS RiskImpact,
+                        (SELECT ARRAY_AGG(description) FROM ra_keysecondary) AS KeyOrSecondary,
+                        (SELECT ARRAY_AGG(description) FROM ra_riskcategory) AS RiskCategory;";
 
-            return await dbConnection.QueryFirstOrDefaultAsync<Risks_Assessment>(query);
+                var result = await dbConnection.QueryFirstOrDefaultAsync<Risks_Assessment>(query);
+                return result ?? new Risks_Assessment();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve risks. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<Controls_Assessment> GetControlsAsync(string email, string password)
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-           dbConnection.Open();
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
 
-            string query = @"
-                SELECT 
-                    NULL AS MitigatingControls,
-                    NULL AS Responsibility,
-                    (SELECT ARRAY_AGG(description) FROM RA_DataFrequency) AS DataFrequency,
-                    (SELECT ARRAY_AGG(description) FROM RA_Nature) AS Nature,
-                    (SELECT ARRAY_AGG(description) FROM RA_Frequency) AS Frequency;";
+                string query = @"
+                    SELECT 
+                        NULL AS MitigatingControls,
+                        NULL AS Responsibility,
+                        (SELECT ARRAY_AGG(description) FROM ra_datafrequency) AS DataFrequency,
+                        (SELECT ARRAY_AGG(description) FROM ra_nature) AS Nature,
+                        (SELECT ARRAY_AGG(description) FROM ra_frequency) AS Frequency;";
 
-            return await dbConnection.QueryFirstOrDefaultAsync<Controls_Assessment>(query, new { Email = email, Password = password });
+                var result = await dbConnection.QueryFirstOrDefaultAsync<Controls_Assessment>(query, new { Email = email, Password = password });
+                return result ?? new Controls_Assessment();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve controls. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<Outcome_Assessment> GetOutcomesAsync(string email, string password)
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-           dbConnection.Open();
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
 
-            string query = @"
-                SELECT 
-                    (SELECT ARRAY_AGG(description) FROM RA_Evidence) AS Evidence,
-                    NULL AS Authoriser,
-                    NULL AS AuditorsRecommendedActionPlan,
-                    NULL AS ResponsiblePerson,
-                    NULL AS AgreedDate,
-                    (SELECT ARRAY_AGG(description) FROM RA_OutcomeLikelihood) AS OutcomeLikelihood,
-                    (SELECT ARRAY_AGG(description) FROM RA_Impact) AS Impact;";
+                string query = @"
+                    SELECT 
+                        (SELECT ARRAY_AGG(description) FROM ra_evidence) AS Evidence,
+                        NULL AS Authoriser,
+                        NULL AS AuditorsRecommendedActionPlan,
+                        NULL AS ResponsiblePerson,
+                        NULL AS AgreedDate,
+                        (SELECT ARRAY_AGG(description) FROM ra_outcomelikelihood) AS OutcomeLikelihood,
+                        (SELECT ARRAY_AGG(description) FROM ra_impact) AS Impact;";
 
-            return await dbConnection.QueryFirstOrDefaultAsync<Outcome_Assessment>(query, new { Email = email, Password = password });
+                var result = await dbConnection.QueryFirstOrDefaultAsync<Outcome_Assessment>(query, new { Email = email, Password = password });
+                return result ?? new Outcome_Assessment();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve outcomes. Error: {ex.Message}", ex);
+            }
         }
 
         #endregion
@@ -74,242 +100,424 @@ namespace Affine.Engine.Repository.Auditing
 
         public async Task<RiskAssessment_Assessment> GetRiskAssessmentAsync(int RiskAssessmentRefID)
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-           dbConnection.Open();
-
-            string query = @"
-                SELECT 
-                    ref.client,
-                    ref.assessment_period,
-                    ref.assessor,
-                    ref.approved_by,
-                    ra.BusinessObjectives AS ProcessObjectivesAssessment_BusinessObjectives,
-                    ra.MainProcess AS ProcessObjectivesAssessment_MainProcess,
-                    ra.SubProcess AS ProcessObjectivesAssessment_SubProcess,
-                    ra.KeyRiskAndFactors AS RisksAssessment_KeyRiskAndFactors,
-                    rl.description AS RisksAssessment_RiskLikelihood,
-                    ri.description AS RisksAssessment_RiskImpact,
-                    ks.description AS RisksAssessment_KeyOrSecondary,
-                    rc.description AS RisksAssessment_RiskCategory,
-                    ra.MitigatingControls AS ControlsAssessment_MitigatingControls,
-                    ra.Responsibility AS ControlsAssessment_Responsibility,
-                    df.description AS ControlsAssessment_DataFrequency,
-                    f.description AS ControlsAssessment_Frequency,
-                    e.description AS OutcomeAssessment_Evidence,
-                    ra.Authoriser AS OutcomeAssessment_Authoriser,
-                    ra.AuditorsRecommendedActionPlan AS OutcomeAssessment_AuditorsRecommendedActionPlan,
-                    ra.ResponsiblePerson AS OutcomeAssessment_ResponsiblePerson,
-                    ra.AgreedDate AS OutcomeAssessment_AgreedDate,
-                    ol.description AS OutcomeAssessment_OutcomeLikelihood,
-                    i.description AS OutcomeAssessment_Impact
-                FROM 
-                    RiskAssessment ra
-                INNER JOIN 
-                    RiskAssessmentReference ref ON ra.reference_id = ref.reference_id
-                LEFT JOIN 
-                    RA_RiskLikelihood rl ON ra.RiskLikelihoodId = rl.id
-                LEFT JOIN 
-                    RA_RiskImpact ri ON ra.RiskImpactId = ri.id
-                LEFT JOIN 
-                    RA_KeySecondary ks ON ra.KeySecondaryId = ks.id
-                LEFT JOIN 
-                    RA_RiskCategory rc ON ra.RiskCategoryId = rc.id
-                LEFT JOIN 
-                    RA_DataFrequency df ON ra.DataFrequencyId = df.id
-                LEFT JOIN 
-                    RA_Frequency f ON ra.FrequencyId = f.id
-                LEFT JOIN 
-                    RA_Evidence e ON ra.EvidenceId = e.id
-                LEFT JOIN 
-                    RA_OutcomeLikelihood ol ON ra.OutcomeLikelihoodId = ol.id
-                LEFT JOIN 
-                    RA_Impact i ON ra.ImpactId = i.id
-                WHERE 
-                    ra.RiskAssessment_RefID = @RiskAssessmentID;";
-
-            return await dbConnection.QueryFirstOrDefaultAsync<RiskAssessment_Assessment>(query, new { RiskAssessmentID = RiskAssessmentRefID });
-        }
-
-        public async Task<bool> AddRiskAssessmentAsync(List<RiskAssessmentCreateRequest> requests)
-        {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            dbConnection.Open();
-            using var transaction = dbConnection.BeginTransaction();
+            if (RiskAssessmentRefID <= 0)
+            {
+                throw new ArgumentException("Reference ID must be greater than zero.", nameof(RiskAssessmentRefID));
+            }
 
             try
             {
-                int referenceId;
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
 
-                if (requests[0].ReferenceId > 0)
+                // First, get the reference (parent) data
+                string referenceQuery = @"
+                    SELECT 
+                        reference_id as ReferenceId,
+                        client as Client,
+                        assessment_start_date as AssessmentStartDate,
+                        assessment_end_date as AssessmentEndDate,
+                        assessor as Assessor,
+                        approved_by as ApprovedBy
+                    FROM 
+                        riskassessmentreference
+                    WHERE 
+                        reference_id = @ReferenceId";
+
+                var parent = await dbConnection.QueryFirstOrDefaultAsync<RiskAssessment_Assessment>(
+                    referenceQuery, 
+                    new { ReferenceId = RiskAssessmentRefID });
+
+                if (parent == null)
                 {
-                    // Check if reference exists
-                    string checkQuery = "SELECT reference_id FROM RiskAssessmentReference WHERE reference_id = @ReferenceId";
-                    var existingRefId = await dbConnection.QueryFirstOrDefaultAsync<int?>(checkQuery, new { requests[0].ReferenceId });
-
-                    if (existingRefId == null)
-                    {
-                        return false; // Reference doesn't exist
-                    }
-                    referenceId = existingRefId.Value;
-                }
-                else
-                {
-                    // Create new reference
-                    string insertRefQuery = @"
-                        INSERT INTO RiskAssessmentReference (
-                            client,
-                            assessment_period,
-                            assessor,
-                            approved_by
-                        ) VALUES (
-                            @Client,
-                            @AssessmentPeriod,
-                            @Assessor,
-                            @ApprovedBy
-                        ) RETURNING reference_id";
-
-                    referenceId = await dbConnection.ExecuteScalarAsync<int>(insertRefQuery, requests[0], transaction);
+                    return null;
                 }
 
-                // Insert risk assessments
-                string insertQuery = @"
-                    INSERT INTO RiskAssessment (
-                        reference_id,
-                        BusinessObjectives,
-                        MainProcess,
-                        SubProcess,
-                        KeyRiskAndFactors,
-                        MitigatingControls,
-                        Responsibility,
-                        Authoriser,
-                        AuditorsRecommendedActionPlan,
-                        ResponsiblePerson,
-                        AgreedDate,
-                        RiskLikelihoodId,
-                        RiskImpactId,
-                        KeySecondaryId,
-                        RiskCategoryId,
-                        DataFrequencyId,
-                        FrequencyId,
-                        EvidenceId,
-                        OutcomeLikelihoodId,
-                        ImpactId
-                    ) VALUES (
-                        @ReferenceId,
-                        @BusinessObjectives,
-                        @MainProcess,
-                        @SubProcess,
-                        @KeyRiskAndFactors,
-                        @MitigatingControls,
-                        @Responsibility,
-                        @Authoriser,
-                        @AuditorsRecommendedActionPlan,
-                        @ResponsiblePerson,
-                        @AgreedDate,
-                        @RiskLikelihoodId,
-                        @RiskImpactId,
-                        @KeySecondaryId,
-                        @RiskCategoryId,
-                        @DataFrequencyId,
-                        @FrequencyId,
-                        @EvidenceId,
-                        @OutcomeLikelihoodId,
-                        @ImpactId
-                    )";
+                // Then, get all risk assessments (children) for this reference
+                string assessmentsQuery = @"
+                    SELECT 
+                        ra.RiskAssessment_RefID,
+                        ra.BusinessObjectives AS ProcessObjectivesAssessment_BusinessObjectives,
+                        ra.MainProcess AS ProcessObjectivesAssessment_MainProcess,
+                        ra.SubProcess AS ProcessObjectivesAssessment_SubProcess,
+                        ra.KeyRiskAndFactors AS RisksAssessment_KeyRiskAndFactors,
+                        rl.description AS RisksAssessment_RiskLikelihood,
+                        ri.description AS RisksAssessment_RiskImpact,
+                        ks.description AS RisksAssessment_KeyOrSecondary,
+                        rc.description AS RisksAssessment_RiskCategory,
+                        ra.MitigatingControls AS ControlsAssessment_MitigatingControls,
+                        ra.Responsibility AS ControlsAssessment_Responsibility,
+                        df.description AS ControlsAssessment_DataFrequency,
+                        f.description AS ControlsAssessment_Frequency,
+                        e.description AS OutcomeAssessment_Evidence,
+                        ra.Authoriser AS OutcomeAssessment_Authoriser,
+                        ra.AuditorsRecommendedActionPlan AS OutcomeAssessment_AuditorsRecommendedActionPlan,
+                        ra.ResponsiblePerson AS OutcomeAssessment_ResponsiblePerson,
+                        ra.AgreedDate AS OutcomeAssessment_AgreedDate,
+                        ol.description AS OutcomeAssessment_OutcomeLikelihood,
+                        i.description AS OutcomeAssessment_Impact
+                    FROM 
+                        riskassessment ra
+                    LEFT JOIN 
+                        ra_risklikelihood rl ON ra.RiskLikelihoodId = rl.id
+                    LEFT JOIN 
+                        ra_riskimpact ri ON ra.RiskImpactId = ri.id
+                    LEFT JOIN 
+                        ra_keysecondary ks ON ra.KeySecondaryId = ks.id
+                    LEFT JOIN 
+                        ra_riskcategory rc ON ra.RiskCategoryId = rc.id
+                    LEFT JOIN 
+                        ra_datafrequency df ON ra.DataFrequencyId = df.id
+                    LEFT JOIN 
+                        ra_frequency f ON ra.FrequencyId = f.id
+                    LEFT JOIN 
+                        ra_evidence e ON ra.EvidenceId = e.id
+                    LEFT JOIN 
+                        ra_outcomelikelihood ol ON ra.OutcomeLikelihoodId = ol.id
+                    LEFT JOIN 
+                        ra_impact i ON ra.ImpactId = i.id
+                    WHERE 
+                        ra.reference_id = @ReferenceId
+                    ORDER BY
+                        ra.RiskAssessment_RefID ASC";
 
-                foreach (var request in requests)
-                {
-                    var parameters = new {
-                        ReferenceId = referenceId,
-                        request.BusinessObjectives,
-                        request.MainProcess,
-                        request.SubProcess,
-                        request.KeyRiskAndFactors,
-                        request.MitigatingControls,
-                        request.Responsibility,
-                        request.Authoriser,
-                        request.AuditorsRecommendedActionPlan,
-                        request.ResponsiblePerson,
-                        request.AgreedDate,
-                        request.RiskLikelihoodId,
-                        request.RiskImpactId,
-                        request.KeySecondaryId,
-                        request.RiskCategoryId,
-                        request.DataFrequencyId,
-                        request.FrequencyId,
-                        request.EvidenceId,
-                        request.OutcomeLikelihoodId,
-                        request.ImpactId
-                    };
-                    
-                    await dbConnection.ExecuteAsync(insertQuery, parameters, transaction);
-                }
+                var children = await dbConnection.QueryAsync<RiskAssessmentDetail>(
+                    assessmentsQuery,
+                    new { ReferenceId = RiskAssessmentRefID });
 
-                transaction.Commit();
-                return true;
+                // Add children to parent
+                parent.RiskAssessments = children.ToList();
+
+                return parent;
             }
-            catch
+            catch (Exception ex)
             {
-                transaction.Rollback();
-                throw;
+                throw new InvalidOperationException($"Failed to retrieve risk assessments. Error: {ex.Message}", ex);
             }
         }
 
-        public async Task<bool> UpdateRiskAssessmentAsync(int riskAssessmentRefId, RiskAssessmentUpdateRequest request)
+        public async Task<bool> AddRiskAssessmentAsync(List<RiskAssessmentCreateRequest> requests, RiskAssessmentReferenceInput reference, int? referenceId = null)
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            dbConnection.Open();
-
-            string updateQuery = @"
-                UPDATE RiskAssessment 
-                SET 
-                    BusinessObjectives = @BusinessObjectives,
-                    MainProcess = @MainProcess,
-                    SubProcess = @SubProcess,
-                    KeyRiskAndFactors = @KeyRiskAndFactors,
-                    MitigatingControls = @MitigatingControls,
-                    Responsibility = @Responsibility,
-                    Authoriser = @Authoriser,
-                    AuditorsRecommendedActionPlan = @AuditorsRecommendedActionPlan,
-                    ResponsiblePerson = @ResponsiblePerson,
-                    AgreedDate = @AgreedDate,
-                    RiskLikelihoodId = @RiskLikelihoodId,
-                    RiskImpactId = @RiskImpactId,
-                    KeySecondaryId = @KeySecondaryId,
-                    RiskCategoryId = @RiskCategoryId,
-                    DataFrequencyId = @DataFrequencyId,
-                    FrequencyId = @FrequencyId,
-                    EvidenceId = @EvidenceId,
-                    OutcomeLikelihoodId = @OutcomeLikelihoodId,
-                    ImpactId = @ImpactId
-                WHERE RiskAssessment_RefID = @RiskAssessmentRefId";
-
-            var parameters = new
+            if (requests == null || !requests.Any())
             {
-                RiskAssessmentRefId = riskAssessmentRefId,
-                request.BusinessObjectives,
-                request.MainProcess,
-                request.SubProcess,
-                request.KeyRiskAndFactors,
-                request.MitigatingControls,
-                request.Responsibility,
-                request.Authoriser,
-                request.AuditorsRecommendedActionPlan,
-                request.ResponsiblePerson,
-                request.AgreedDate,
-                request.RiskLikelihoodId,
-                request.RiskImpactId,
-                request.KeySecondaryId,
-                request.RiskCategoryId,
-                request.DataFrequencyId,
-                request.FrequencyId,
-                request.EvidenceId,
-                request.OutcomeLikelihoodId,
-                request.ImpactId
-            };
+                throw new ArgumentException("Risk assessment requests cannot be null or empty.", nameof(requests));
+            }
 
-            var rowsAffected = await dbConnection.ExecuteAsync(updateQuery, parameters);
-            return rowsAffected > 0;
+            if (reference == null && !referenceId.HasValue)
+            {
+                throw new ArgumentNullException(nameof(reference), "Risk assessment reference information is required when not using an existing reference.");
+            }
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+                
+                // Begin transaction to ensure all inserts succeed or fail together
+                using var transaction = dbConnection.BeginTransaction();
+                
+                try
+                {
+                    int refId;
+                    
+                    // Check if a reference ID was provided and if it exists
+                    if (referenceId.HasValue && referenceId.Value > 0)
+                    {
+                        // Verify the reference ID exists
+                        string checkReferenceQuery = @"
+                            SELECT COUNT(*) 
+                            FROM riskassessmentreference 
+                            WHERE reference_id = @ReferenceId";
+                        
+                        var referenceExists = await dbConnection.ExecuteScalarAsync<int>(
+                            checkReferenceQuery, 
+                            new { ReferenceId = referenceId.Value }, 
+                            transaction);
+                        
+                        if (referenceExists > 0)
+                        {
+                            // Reference exists, use the provided ID
+                            refId = referenceId.Value;
+                        }
+                        else if (reference != null)
+                        {
+                            // Reference doesn't exist but we have reference data, create a new one
+                            string insertRefQuery = @"
+                                INSERT INTO riskassessmentreference (
+                                    client, 
+                                    assessment_start_date, 
+                                    assessment_end_date, 
+                                    assessor, 
+                                    approved_by
+                                ) VALUES (
+                                    @Client, 
+                                    @AssessmentStartDate, 
+                                    @AssessmentEndDate, 
+                                    @Assessor, 
+                                    @ApprovedBy
+                                ) RETURNING reference_id";
+                            
+                            refId = await dbConnection.ExecuteScalarAsync<int>(insertRefQuery, reference, transaction);
+                        }
+                        else
+                        {
+                            // Neither a valid reference ID nor reference data was provided
+                            throw new ArgumentException("Invalid reference ID and no reference data provided.");
+                        }
+                    }
+                    else if (reference != null)
+                    {
+                        // No reference ID provided but we have reference data, create a new one
+                        string insertRefQuery = @"
+                            INSERT INTO riskassessmentreference (
+                                client, 
+                                assessment_start_date, 
+                                assessment_end_date, 
+                                assessor, 
+                                approved_by
+                            ) VALUES (
+                                @Client, 
+                                @AssessmentStartDate, 
+                                @AssessmentEndDate, 
+                                @Assessor, 
+                                @ApprovedBy
+                            ) RETURNING reference_id";
+                        
+                        refId = await dbConnection.ExecuteScalarAsync<int>(insertRefQuery, reference, transaction);
+                    }
+                    else
+                    {
+                        // Neither a reference ID nor reference data was provided
+                        throw new ArgumentException("Either a reference ID or reference data must be provided.");
+                    }
+                    
+                    // Insert each risk assessment with the reference ID
+                    string insertQuery = @"
+                        INSERT INTO riskassessment (
+                            reference_id,
+                            BusinessObjectives,
+                            MainProcess,
+                            SubProcess,
+                            KeyRiskAndFactors,
+                            MitigatingControls,
+                            Responsibility,
+                            Authoriser,
+                            AuditorsRecommendedActionPlan,
+                            ResponsiblePerson,
+                            AgreedDate,
+                            RiskLikelihoodId,
+                            RiskImpactId,
+                            KeySecondaryId,
+                            RiskCategoryId,
+                            DataFrequencyId,
+                            FrequencyId,
+                            EvidenceId,
+                            OutcomeLikelihoodId,
+                            ImpactId
+                        ) VALUES (
+                            @ReferenceId,
+                            @BusinessObjectives,
+                            @MainProcess,
+                            @SubProcess,
+                            @KeyRiskAndFactors,
+                            @MitigatingControls,
+                            @Responsibility,
+                            @Authoriser,
+                            @AuditorsRecommendedActionPlan,
+                            @ResponsiblePerson,
+                            @AgreedDate,
+                            @RiskLikelihoodId,
+                            @RiskImpactId,
+                            @KeySecondaryId,
+                            @RiskCategoryId,
+                            @DataFrequencyId,
+                            @FrequencyId,
+                            @EvidenceId,
+                            @OutcomeLikelihoodId,
+                            @ImpactId
+                        )";
+                    
+                    foreach (var request in requests)
+                    {
+                        var parameters = new
+                        {
+                            ReferenceId = refId,
+                            request.BusinessObjectives,
+                            request.MainProcess,
+                            request.SubProcess,
+                            request.KeyRiskAndFactors,
+                            request.MitigatingControls,
+                            request.Responsibility,
+                            request.Authoriser,
+                            request.AuditorsRecommendedActionPlan,
+                            request.ResponsiblePerson,
+                            request.AgreedDate,
+                            request.RiskLikelihoodId,
+                            request.RiskImpactId,
+                            request.KeySecondaryId,
+                            request.RiskCategoryId,
+                            request.DataFrequencyId,
+                            request.FrequencyId,
+                            request.EvidenceId,
+                            request.OutcomeLikelihoodId,
+                            request.ImpactId
+                        };
+                        
+                        await dbConnection.ExecuteAsync(insertQuery, parameters, transaction);
+                    }
+                    
+                    // Commit the transaction
+                    transaction.Commit();
+                    return true;
+                }
+                catch
+                {
+                    // If any error occurs, roll back the transaction
+                    transaction.Rollback();
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to add risk assessment. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> UpdateRiskAssessmentsAsync(List<RiskAssessmentUpdateRequest> updates, int referenceId)
+        {
+            if (updates == null || !updates.Any())
+            {
+                throw new ArgumentException("Updates cannot be null or empty.", nameof(updates));
+            }
+
+            if (referenceId <= 0)
+            {
+                throw new ArgumentException("Reference ID must be greater than zero.", nameof(referenceId));
+            }
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+                
+                // Begin transaction to ensure all updates succeed or fail together
+                using var transaction = dbConnection.BeginTransaction();
+                
+                try
+                {
+                    // Check if reference exists
+                    string checkReferenceQuery = @"
+                        SELECT COUNT(*) 
+                        FROM riskassessmentreference 
+                        WHERE reference_id = @ReferenceId";
+                    
+                    var referenceExists = await dbConnection.ExecuteScalarAsync<int>(
+                        checkReferenceQuery, 
+                        new { ReferenceId = referenceId }, 
+                        transaction);
+                    
+                    if (referenceExists == 0)
+                    {
+                        // Reference ID doesn't exist
+                        transaction.Rollback();
+                        return false;
+                    }
+                    
+                    // Update each risk assessment individually with only the specified fields
+                    foreach (var update in updates)
+                    {
+                        if (update.RiskAssessmentRefId <= 0)
+                        {
+                            continue; // Skip invalid IDs
+                        }
+                        
+                        // Check if this specific risk assessment exists and belongs to the reference
+                        string checkRiskAssessmentQuery = @"
+                            SELECT COUNT(*) 
+                            FROM riskassessment 
+                            WHERE RiskAssessment_RefID = @RiskAssessmentRefId 
+                            AND reference_id = @ReferenceId";
+                        
+                        var riskAssessmentExists = await dbConnection.ExecuteScalarAsync<int>(
+                            checkRiskAssessmentQuery, 
+                            new { 
+                                RiskAssessmentRefId = update.RiskAssessmentRefId,
+                                ReferenceId = referenceId
+                            }, 
+                            transaction);
+                        
+                        if (riskAssessmentExists == 0)
+                        {
+                            continue; // Skip updates for non-existent risk assessments
+                        }
+                        
+                        // Build parameters and update fields more efficiently
+                        var parameters = new DynamicParameters();
+                        parameters.Add("RiskAssessmentRefId", update.RiskAssessmentRefId);
+                        
+                        var updateFields = new List<string>();
+                        
+                        // More concise approach to adding fields for update
+                        AddUpdateField(updateFields, parameters, "BusinessObjectives", update.BusinessObjectives);
+                        AddUpdateField(updateFields, parameters, "MainProcess", update.MainProcess);
+                        AddUpdateField(updateFields, parameters, "SubProcess", update.SubProcess);
+                        AddUpdateField(updateFields, parameters, "KeyRiskAndFactors", update.KeyRiskAndFactors);
+                        AddUpdateField(updateFields, parameters, "MitigatingControls", update.MitigatingControls);
+                        AddUpdateField(updateFields, parameters, "Responsibility", update.Responsibility);
+                        AddUpdateField(updateFields, parameters, "Authoriser", update.Authoriser);
+                        AddUpdateField(updateFields, parameters, "AuditorsRecommendedActionPlan", update.AuditorsRecommendedActionPlan);
+                        AddUpdateField(updateFields, parameters, "ResponsiblePerson", update.ResponsiblePerson);
+                        AddUpdateField(updateFields, parameters, "AgreedDate", update.AgreedDate);
+                        AddUpdateField(updateFields, parameters, "RiskLikelihoodId", update.RiskLikelihoodId);
+                        AddUpdateField(updateFields, parameters, "RiskImpactId", update.RiskImpactId);
+                        AddUpdateField(updateFields, parameters, "KeySecondaryId", update.KeySecondaryId);
+                        AddUpdateField(updateFields, parameters, "RiskCategoryId", update.RiskCategoryId);
+                        AddUpdateField(updateFields, parameters, "DataFrequencyId", update.DataFrequencyId);
+                        AddUpdateField(updateFields, parameters, "FrequencyId", update.FrequencyId);
+                        AddUpdateField(updateFields, parameters, "EvidenceId", update.EvidenceId);
+                        AddUpdateField(updateFields, parameters, "OutcomeLikelihoodId", update.OutcomeLikelihoodId);
+                        AddUpdateField(updateFields, parameters, "ImpactId", update.ImpactId);
+                        
+                        // Skip if no fields to update
+                        if (updateFields.Count == 0)
+                        {
+                            continue;
+                        }
+                        
+                        // Build and execute the update query
+                        string updateQuery = $@"
+                            UPDATE riskassessment 
+                            SET {string.Join(", ", updateFields)}
+                            WHERE RiskAssessment_RefID = @RiskAssessmentRefId";
+                        
+                        await dbConnection.ExecuteAsync(updateQuery, parameters, transaction);
+                    }
+                    
+                    // Commit the transaction
+                    transaction.Commit();
+                    return true;
+                }
+                catch
+                {
+                    // If any error occurs, roll back the transaction
+                    transaction.Rollback();
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to update risk assessments. Error: {ex.Message}", ex);
+            }
+        }
+
+        // Helper method to add a field to the update if it's not null
+        private void AddUpdateField<T>(List<string> updateFields, DynamicParameters parameters, string fieldName, T value)
+        {
+            if (value != null)
+            {
+                updateFields.Add($"{fieldName} = @{fieldName}");
+                parameters.Add(fieldName, value);
+            }
         }
 
         #endregion
@@ -318,53 +526,159 @@ namespace Affine.Engine.Repository.Auditing
 
         public async Task<IEnumerable<RiskLikelihood>> GetRiskLikelihoodsAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT Id, Description, Position FROM ra_risklikelihood ORDER BY position";
-            return await dbConnection.QueryAsync<RiskLikelihood>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_risklikelihood ORDER BY position";
+                var result = await dbConnection.QueryAsync<RiskLikelihood>(query);
+                return result ?? Enumerable.Empty<RiskLikelihood>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve risk likelihoods. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<IEnumerable<Impact>> GetImpactsAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT id, description, position FROM ra_impact ORDER BY position";
-            return await dbConnection.QueryAsync<Impact>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_impact ORDER BY position";
+                var result = await dbConnection.QueryAsync<Impact>(query);
+                return result ?? Enumerable.Empty<Impact>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve impacts. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<IEnumerable<KeySecondary>> GetKeySecondaryRisksAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT id, description, position FROM ra_keysecondary ORDER BY position";
-            return await dbConnection.QueryAsync<KeySecondary>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_keysecondary ORDER BY position";
+                var result = await dbConnection.QueryAsync<KeySecondary>(query);
+                return result ?? Enumerable.Empty<KeySecondary>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve key secondary risks. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<IEnumerable<RiskCategory>> GetRiskCategoriesAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT id, description, position FROM ra_riskcategory ORDER BY position";
-            return await dbConnection.QueryAsync<RiskCategory>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_riskcategory ORDER BY position";
+                var result = await dbConnection.QueryAsync<RiskCategory>(query);
+                return result ?? Enumerable.Empty<RiskCategory>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve risk categories. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<IEnumerable<DataFrequency>> GetDataFrequenciesAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT id, description, position FROM ra_datafrequency ORDER BY position";
-            return await dbConnection.QueryAsync<DataFrequency>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_datafrequency ORDER BY position";
+                var result = await dbConnection.QueryAsync<DataFrequency>(query);
+                return result ?? Enumerable.Empty<DataFrequency>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve data frequencies. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<IEnumerable<OutcomeLikelihood>> GetOutcomeLikelihoodsAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT id, description, position FROM ra_outcomelikelihood ORDER BY position";
-            return await dbConnection.QueryAsync<OutcomeLikelihood>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_outcomelikelihood ORDER BY position";
+                var result = await dbConnection.QueryAsync<OutcomeLikelihood>(query);
+                return result ?? Enumerable.Empty<OutcomeLikelihood>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve outcome likelihoods. Error: {ex.Message}", ex);
+            }
         }
 
         public async Task<IEnumerable<Evidence>> GetEvidenceAsync()
         {
-            using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
-            string query = "SELECT id, description, position FROM ra_evidence ORDER BY position";
-            return await dbConnection.QueryAsync<Evidence>(query);
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = "SELECT id, description FROM ra_evidence ORDER BY position";
+                var result = await dbConnection.QueryAsync<Evidence>(query);
+                return result ?? Enumerable.Empty<Evidence>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve evidence. Error: {ex.Message}", ex);
+            }
         }
 
         #endregion
+
+        public async Task<int> AddRiskAssessmentReferenceAsync(RiskAssessmentReferenceInput reference)
+        {
+            if (reference == null)
+            {
+                throw new ArgumentNullException(nameof(reference), "Risk assessment reference cannot be null.");
+            }
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = @"
+                    INSERT INTO riskassessmentreference (
+                        client, 
+                        assessment_start_date, 
+                        assessment_end_date, 
+                        assessor, 
+                        approved_by
+                    ) VALUES (
+                        @Client, 
+                        @AssessmentStartDate, 
+                        @AssessmentEndDate, 
+                        @Assessor, 
+                        @ApprovedBy
+                    ) RETURNING reference_id";
+
+                var referenceId = await dbConnection.ExecuteScalarAsync<int>(query, reference);
+                return referenceId;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to add risk assessment reference. Error: {ex.Message}", ex);
+            }
+        }
     }
 }

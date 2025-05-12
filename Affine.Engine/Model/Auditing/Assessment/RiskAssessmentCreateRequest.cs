@@ -4,7 +4,6 @@ namespace Affine.Engine.Model.Auditing.Assessment
 {
     public class RiskAssessmentCreateRequest
     {
-        public int ReferenceId { get; set; }
         public string BusinessObjectives { get; set; }
         public string MainProcess { get; set; }
         public string SubProcess { get; set; }

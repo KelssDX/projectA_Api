@@ -1,0 +1,3 @@
+{
+  "postgresConnectionString": "postgresql://postgres:Monday%40123@localhost:5432/Risk_Assess_Framework"
+} 

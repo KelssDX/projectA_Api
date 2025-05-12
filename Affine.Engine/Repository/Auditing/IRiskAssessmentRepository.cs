@@ -24,9 +24,8 @@ namespace Affine.Engine.Repository.Auditing
         Task<IEnumerable<Evidence>> GetEvidenceAsync();
 
         //Risk Assessment Operations
-        Task<bool> AddRiskAssessmentAsync(List<RiskAssessmentCreateRequest> requests);
-       //  Task<bool>  UpdateRiskAssessmentsAsync(List<RiskAssessmentUpdateRequest> updates, int referenceId);
-        Task<bool> UpdateRiskAssessmentAsync(int riskAssessmentRefId, RiskAssessmentUpdateRequest request);
-
+        Task<bool> AddRiskAssessmentAsync(List<RiskAssessmentCreateRequest> requests, RiskAssessmentReferenceInput reference, int? referenceId = null);
+        Task<bool> UpdateRiskAssessmentsAsync(List<RiskAssessmentUpdateRequest> updates, int referenceId);
+        Task<int> AddRiskAssessmentReferenceAsync(RiskAssessmentReferenceInput reference);
     }
 }
