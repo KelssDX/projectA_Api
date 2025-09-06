@@ -645,6 +645,96 @@ namespace Affine.Engine.Repository.Auditing
 
         #endregion
 
+        public async Task<IEnumerable<Affine.Engine.Model.Auditing.Department>> GetDepartmentsAsync()
+        {
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                // Follow repository pattern: no schema prefixes (connection default schema handles it)
+                const string query = @"SELECT id, name, head, risk_level_id AS RiskLevelId, assessments, created_at AS CreatedAt, updated_at AS UpdatedAt FROM departments ORDER BY name";
+
+                var result = await dbConnection.QueryAsync<Affine.Engine.Model.Auditing.Department>(query);
+                return result ?? Enumerable.Empty<Affine.Engine.Model.Auditing.Department>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve departments. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<IEnumerable<Affine.Engine.Model.Auditing.Project>> GetProjectsAsync()
+        {
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"
+                    SELECT 
+                        id, 
+                        name, 
+                        description, 
+                        status_id AS StatusId,
+                        department_id AS DepartmentId,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        budget,
+                        risk_level_id AS RiskLevelId,
+                        manager,
+                        created_at AS CreatedAt, 
+                        updated_at AS UpdatedAt 
+                    FROM projects 
+                    ORDER BY name";
+
+                var result = await dbConnection.QueryAsync<Affine.Engine.Model.Auditing.Project>(query);
+                return result ?? Enumerable.Empty<Affine.Engine.Model.Auditing.Project>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve projects. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<IEnumerable<object>> GetAssessmentsAsync()
+        {
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"
+                    SELECT 
+                        ref.reference_id AS id,
+                        ref.client AS title,
+                        ref.assessor AS auditor,
+                        ref.assessment_start_date AS assessment_date,
+                        ref.approved_by,
+                        COALESCE(AVG(COALESCE(ra.risklikelihoodid, 0) * COALESCE(ra.riskimpactid, 0)), 0) AS risk_score,
+                        CASE 
+                            WHEN COALESCE(AVG(COALESCE(ra.risklikelihoodid, 0) * COALESCE(ra.riskimpactid, 0)), 0) >= 16 THEN 'High'
+                            WHEN COALESCE(AVG(COALESCE(ra.risklikelihoodid, 0) * COALESCE(ra.riskimpactid, 0)), 0) >= 8 THEN 'Medium'
+                            ELSE 'Low'
+                        END AS risk_level,
+                        COUNT(ra.riskassessment_refid) AS total_assessments,
+                        ref.created_date AS created_at,
+                        ref.updated_at
+                    FROM riskassessmentreference ref
+                    LEFT JOIN riskassessment ra ON ref.reference_id = ra.reference_id
+                    GROUP BY ref.reference_id, ref.client, ref.assessor, ref.assessment_start_date, 
+                             ref.approved_by, ref.created_date, ref.updated_at
+                    ORDER BY ref.assessment_start_date DESC";
+
+                var result = await dbConnection.QueryAsync(query);
+                return result ?? Enumerable.Empty<object>();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to retrieve assessments. Error: {ex.Message}", ex);
+            }
+        }
+
         public async Task<int> AddRiskAssessmentReferenceAsync(RiskAssessmentReferenceInput reference)
         {
             if (reference == null)

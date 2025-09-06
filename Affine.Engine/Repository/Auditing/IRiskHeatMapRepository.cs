@@ -9,6 +9,6 @@ namespace Affine.Engine.Repository.Auditing
 {
     public interface IRiskHeatMapRepository
     {
-        Task<RiskHeatmapResponse> GetRiskHeatmapAsync(int referenceId);
+        Task<RiskHeatmapResponse> GetRiskHeatmapAsync(int referenceId, int? departmentId = null);
     }
 }

@@ -5,6 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text;
 
 namespace Affina.Auditing.API.Controllers
 {
@@ -13,10 +16,62 @@ namespace Affina.Auditing.API.Controllers
     public class RiskAssessmentController : ControllerBase
     {
         private readonly IRiskAssessmentRepository _riskAssessmentRepository;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _configuration;
 
-        public RiskAssessmentController(IRiskAssessmentRepository riskAssessmentRepository)
+        public RiskAssessmentController(
+            IRiskAssessmentRepository riskAssessmentRepository,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration configuration)
         {
             _riskAssessmentRepository = riskAssessmentRepository ?? throw new ArgumentNullException(nameof(riskAssessmentRepository));
+            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        }
+        // New: Departments endpoint for frontend pickers
+        [HttpGet]
+        [Route("GetDepartments")]
+        public async Task<IActionResult> GetDepartments()
+        {
+            try
+            {
+                var departments = await _riskAssessmentRepository.GetDepartmentsAsync();
+                return Ok(departments);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while retrieving departments: {ex.Message}");
+            }
+        }
+
+        [HttpGet]
+        [Route("GetProjects")]
+        public async Task<IActionResult> GetProjects()
+        {
+            try
+            {
+                var projects = await _riskAssessmentRepository.GetProjectsAsync();
+                return Ok(projects);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while retrieving projects: {ex.Message}");
+            }
+        }
+
+        [HttpGet]
+        [Route("GetAssessments")]
+        public async Task<IActionResult> GetAssessments()
+        {
+            try
+            {
+                var assessments = await _riskAssessmentRepository.GetAssessmentsAsync();
+                return Ok(assessments);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while retrieving assessments: {ex.Message}");
+            }
         }
 
         // Original Risk Assessment Logic
@@ -133,6 +188,80 @@ namespace Affina.Auditing.API.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, "An unexpected error occurred while updating risk assessment data.");
+            }
+        }
+        
+        [HttpPost]
+        [Route("StartControlTesting/{referenceId}")]
+        public async Task<IActionResult> StartControlTesting(int referenceId, [FromBody] ControlTestingRequest request)
+        {
+            if (referenceId <= 0)
+                return BadRequest("Reference ID must be greater than zero.");
+
+            if (request == null)
+                return BadRequest("Control testing request data is required.");
+                
+            if (string.IsNullOrEmpty(request.ControlId))
+                return BadRequest("Control ID is required.");
+                
+            if (string.IsNullOrEmpty(request.TesterId))
+                return BadRequest("Tester ID is required.");
+
+            try
+            {
+                // First, verify the risk assessment exists
+                var riskAssessment = await _riskAssessmentRepository.GetRiskAssessmentAsync(referenceId);
+                if (riskAssessment == null)
+                {
+                    return NotFound($"Risk Assessment Reference with ID {referenceId} not found");
+                }
+
+                // Make a request to the workflow service to start control testing
+                var workflowServiceUrl = _configuration["WorkflowServiceUrl"] ?? "https://localhost:7126";
+                var client = _httpClientFactory.CreateClient();
+                
+                // Update to match Elsa 3.3.5 API structure
+                var workflowRequest = new
+                {
+                    workflowDefinitionId = "ControlTestingWorkflow",
+                    activityId = "ControlTestingActivity",
+                    input = new {
+                        ControlId = request.ControlId,
+                        RiskAssessmentId = referenceId.ToString(),
+                        TesterName = request.TesterId,
+                        TestResult = "Pending"
+                    }
+                };
+                
+                var jsonContent = JsonSerializer.Serialize(workflowRequest);
+                var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                
+                // Updated endpoint for Elsa 3.3.5
+                var response = await client.PostAsync($"{workflowServiceUrl}/elsa/api/workflows/dispatch", content);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var responseObject = JsonSerializer.Deserialize<JsonElement>(responseContent);
+                    
+                    return Ok(new { 
+                        Success = true, 
+                        Message = "Control testing workflow started successfully",
+                        WorkflowInstanceId = responseObject.GetProperty("workflowInstanceId").GetString()
+                    });
+                }
+                else
+                {
+                    return StatusCode((int)response.StatusCode, $"Failed to start control testing workflow: {response.ReasonPhrase}");
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(500, $"Database operation failed: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred: {ex.Message}");
             }
         }
 
@@ -315,4 +444,11 @@ namespace Affina.Auditing.API.Controllers
             }
         }
     }
-}
+    
+    public class ControlTestingRequest
+    {
+        public string ControlId { get; set; } = default!;
+        public string TesterId { get; set; } = default!;
+        public string? TestFrequency { get; set; }
+    }
+} 

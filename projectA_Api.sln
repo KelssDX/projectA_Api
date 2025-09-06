@@ -1,5 +1,4 @@
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.2.32616.157
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -19,6 +18,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Affine.Auditing.API", "Affi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Affine.Tests", "Affine.Tests\Affine.Tests.csproj", "{BCBDDA88-3904-430F-8BA5-2905AB7E21BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Affine.Auditing.Workflows.Server", "Affine.Auditing.Workflows.Server\Affine.Auditing.Workflows.Server.csproj", "{BDD50AC6-1D18-4877-8E67-59D7D60D6AB7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Affine.Auditing.Workflows.Studio", "Affine.Auditing.Workflows.Studio\Affine.Auditing.Workflows.Studio.csproj", "{2869CE7C-92E9-4B6A-82D2-AFA68BA62C03}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Frontend", "Frontend", "{F1B2C3D4-5E6F-7A8B-9C0D-E1F2A3B4C5D6}"
+	ProjectSection(SolutionItems) = preProject
+		RiskAssessmentApp_Frontend\README.md = RiskAssessmentApp_Frontend\README.md
+		RiskAssessmentApp_Frontend\requirements.txt = RiskAssessmentApp_Frontend\requirements.txt
+		RiskAssessmentApp_Frontend\main.py = RiskAssessmentApp_Frontend\main.py
+		RiskAssessmentApp_Frontend\config.py = RiskAssessmentApp_Frontend\config.py
+	EndProjectSection
+EndProject
+
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +53,15 @@ Global
 		{BCBDDA88-3904-430F-8BA5-2905AB7E21BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BCBDDA88-3904-430F-8BA5-2905AB7E21BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BCBDDA88-3904-430F-8BA5-2905AB7E21BC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BDD50AC6-1D18-4877-8E67-59D7D60D6AB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BDD50AC6-1D18-4877-8E67-59D7D60D6AB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BDD50AC6-1D18-4877-8E67-59D7D60D6AB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BDD50AC6-1D18-4877-8E67-59D7D60D6AB7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2869CE7C-92E9-4B6A-82D2-AFA68BA62C03}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2869CE7C-92E9-4B6A-82D2-AFA68BA62C03}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2869CE7C-92E9-4B6A-82D2-AFA68BA62C03}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2869CE7C-92E9-4B6A-82D2-AFA68BA62C03}.Release|Any CPU.Build.0 = Release|Any CPU
+
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

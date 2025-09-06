@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk and Control Assessment Template</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-icon {
+            width: 40px;
+            height: 40px;
+            background: white;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header-icon::before {
+            content: "🛡️";
+            font-size: 20px;
+        }
+
+        .form-container {
+            background: white;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .form-header {
+            padding: 20px;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .form-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .assessments-section {
+            padding: 20px;
+        }
+
+        .assessment-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #2980b9;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background-color: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #7f8c8d;
+        }
+
+        .btn-danger {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #c0392b;
+        }
+
+        .btn-success {
+            background-color: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background-color: #229954;
+        }
+
+        .assessment-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+
+        .assessment-table th {
+            background-color: #2c3e50;
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: 600;
+            border: 1px solid #34495e;
+        }
+
+        .assessment-table td {
+            padding: 10px 8px;
+            border: 1px solid #dee2e6;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .assessment-table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .assessment-table tbody tr:hover {
+            background-color: #e3f2fd;
+        }
+
+        .risk-level-high {
+            background-color: #ffebee !important;
+            color: #c62828;
+        }
+
+        .risk-level-medium {
+            background-color: #fff3e0 !important;
+            color: #ef6c00;
+        }
+
+        .risk-level-low {
+            background-color: #e8f5e8 !important;
+            color: #2e7d32;
+        }
+
+        .form-actions {
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 90%;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #3498db;
+            color: white;
+            border-radius: 10px 10px 0 0;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: white;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .business-process {
+            background-color: #e3f2fd;
+            padding: 15px;
+            border-left: 4px solid #2196f3;
+            margin-bottom: 20px;
+        }
+
+        .readonly {
+            background-color: #f8f9fa !important;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .assessment-table {
+                font-size: 10px;
+            }
+            
+            .assessment-table th,
+            .assessment-table td {
+                padding: 6px 4px;
+            }
+            
+            .form-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-icon"></div>
+            <div>
+                <h1>RISK AND CONTROL ASSESSMENT TEMPLATE</h1>
+                <p>Comprehensive risk evaluation and mitigation control framework</p>
+            </div>
+        </div>
+
+        <div class="form-container">
+            <div class="form-header">
+                <h2 id="form-title">Risk Assessment Form</h2>
+                <div>
+                    <button type="button" class="btn btn-secondary" onclick="goBack()">
+                        ← Back
+                    </button>
+                </div>
+            </div>
+
+            <form id="riskAssessmentForm">
+                <div class="form-meta">
+                    <div class="form-group">
+                        <label for="client">Client:</label>
+                        <input type="text" id="client" name="client" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="assessmentPeriod">Assessment Period:</label>
+                        <input type="text" id="assessmentPeriod" name="assessmentPeriod" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="assessor">Assessor:</label>
+                        <input type="text" id="assessor" name="assessor" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="approvedBy">Approved By:</label>
+                        <input type="text" id="approvedBy" name="approvedBy">
+                    </div>
+                </div>
+
+                <div class="assessments-section">
+                    <div class="assessment-controls">
+                        <h3>Risk Assessments</h3>
+                        <button type="button" class="btn btn-primary" onclick="addAssessment()">
+                            + Add Assessment
+                        </button>
+                    </div>
+
+                    <div class="table-container" style="overflow-x: auto;">
+                        <table class="assessment-table">
+                            <thead>
+                                <tr>
+                                    <th rowspan="2">Business Process</th>
+                                    <th rowspan="2">Main Process</th>
+                                    <th rowspan="2">Sub Process</th>
+                                    <th rowspan="2">Key Risk and Factors</th>
+                                    <th rowspan="2">Likelihood Impact</th>
+                                    <th rowspan="2">Risk Category</th>
+                                    <th rowspan="2">Date</th>
+                                    <th rowspan="2">Mitigating Controls</th>
+                                    <th colspan="4">Controls Nature</th>
+                                    <th rowspan="2">Evidence</th>
+                                    <th rowspan="2">Auditors</th>
+                                    <th rowspan="2">Audit Recommendation/Action Plan</th>
+                                    <th rowspan="2">Responsible</th>
+                                    <th rowspan="2">Agreed Date</th>
+                                    <th rowspan="2">Likelihood Impact</th>
+                                    <th rowspan="2">Actions</th>
+                                </tr>
+                                <tr>
+                                    <th>Preventive</th>
+                                    <th>Responsive</th>
+                                    <th>Frequency</th>
+                                    <th>Evidence</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assessmentTableBody">
+                                <!-- Assessment rows will be added here dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="goBack()">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="saveForm()">Save</button>
+                    <button type="submit" class="btn btn-primary">Submit Assessment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Assessment Details -->
+    <div id="assessmentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Assessment Details</h3>
+                <button type="button" class="close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="assessmentDetailForm">
+                    <input type="hidden" id="modalRowIndex" value="">
+                    
+                    <div class="business-process">
+                        <h4>Business Process Information</h4>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalBusinessProcess">Business Process:</label>
+                            <input type="text" id="modalBusinessProcess" name="businessProcess" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalMainProcess">Main Process:</label>
+                            <input type="text" id="modalMainProcess" name="mainProcess" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalSubProcess">Sub Process:</label>
+                            <input type="text" id="modalSubProcess" name="subProcess">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalKeyRisk">Key Risk and Factors:</label>
+                            <textarea id="modalKeyRisk" name="keyRisk" rows="3" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalLikelihoodImpact">Likelihood Impact:</label>
+                            <select id="modalLikelihoodImpact" name="likelihoodImpact" required>
+                                <option value="">Select...</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalRiskCategory">Risk Category:</label>
+                            <select id="modalRiskCategory" name="riskCategory" required>
+                                <option value="">Select...</option>
+                                <option value="Strategic Risk">Strategic Risk</option>
+                                <option value="Operational Risk">Operational Risk</option>
+                                <option value="Financial Risk">Financial Risk</option>
+                                <option value="Compliance Risk">Compliance Risk</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalDate">Date:</label>
+                            <input type="date" id="modalDate" name="date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalMitigatingControls">Mitigating Controls:</label>
+                            <textarea id="modalMitigatingControls" name="mitigatingControls" rows="3"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="business-process">
+                        <h4>Control Nature</h4>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalPreventive">Preventive:</label>
+                            <select id="modalPreventive" name="preventive">
+                                <option value="">N/A</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalResponsive">Responsive:</label>
+                            <select id="modalResponsive" name="responsive">
+                                <option value="">N/A</option>
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalFrequency">Frequency:</label>
+                            <select id="modalFrequency" name="frequency">
+                                <option value="">Select...</option>
+                                <option value="Daily">Daily</option>
+                                <option value="Weekly">Weekly</option>
+                                <option value="Monthly">Monthly</option>
+                                <option value="Quarterly">Quarterly</option>
+                                <option value="Annually">Annually</option>
+                                <option value="Once-off">Once-off</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalEvidence">Evidence:</label>
+                            <input type="text" id="modalEvidence" name="evidence">
+                        </div>
+                    </div>
+
+                    <div class="business-process">
+                        <h4>Audit Information</h4>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalAuditors">Auditors:</label>
+                            <input type="text" id="modalAuditors" name="auditors">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalRecommendation">Audit Recommendation/Action Plan:</label>
+                            <textarea id="modalRecommendation" name="recommendation" rows="3"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="modalResponsible">Responsible:</label>
+                            <input type="text" id="modalResponsible" name="responsible">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalAgreedDate">Agreed Date:</label>
+                            <input type="date" id="modalAgreedDate" name="agreedDate">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalAdjustedLikelihood">Adjusted Likelihood Impact:</label>
+                            <select id="modalAdjustedLikelihood" name="adjustedLikelihood">
+                                <option value="">Select...</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                        <button type="button" class="btn btn-primary" onclick="saveAssessment()">Save Assessment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let assessments = [];
+        let currentMode = 'create'; // 'create', 'edit', 'view'
+        let editingRowIndex = -1;
+
+        // Initialize form based on mode
+        function initializeForm(mode = 'create', data = null) {
+            currentMode = mode;
+            const formTitle = document.getElementById('form-title');
+            const form = document.getElementById('riskAssessmentForm');
+            const inputs = form.querySelectorAll('input, select, textarea');
+            
+            switch(mode) {
+                case 'create':
+                    formTitle.textContent = 'Create New Risk Assessment';
+                    inputs.forEach(input => input.removeAttribute('readonly'));
+                    break;
+                case 'edit':
+                    formTitle.textContent = 'Edit Risk Assessment';
+                    inputs.forEach(input => input.removeAttribute('readonly'));
+                    if (data) populateForm(data);
+                    break;
+                case 'view':
+                    formTitle.textContent = 'View Risk Assessment';
+                    inputs.forEach(input => {
+                        input.setAttribute('readonly', true);
+                        input.classList.add('readonly');
+                    });
+                    if (data) populateForm(data);
+                    break;
+            }
+            updateFormButtons();
+        }
+
+        function updateFormButtons() {
+            const submitBtn = document.querySelector('button[type="submit"]');
+            const saveBtn = document.querySelector('.btn-success');
+            
+            if (currentMode === 'view') {
+                submitBtn.style.display = 'none';
+                saveBtn.style.display = 'none';
+            } else {
+                submitBtn.style.display = 'inline-flex';
+                saveBtn.style.display = 'inline-flex';
+            }
+        }
+
+        function populateForm(data) {
+            if (data.client) document.getElementById('client').value = data.client;
+            if (data.assessmentPeriod) document.getElementById('assessmentPeriod').value = data.assessmentPeriod;
+            if (data.assessor) document.getElementById('assessor').value = data.assessor;
+            if (data.approvedBy) document.getElementById('approvedBy').value = data.approvedBy;
+            if (data.assessments) {
+                assessments = data.assessments;
+                renderAssessmentTable();
+            }
+        }
+
+        function addAssessment() {
+            if (currentMode === 'view') return;
+            editingRowIndex = -1;
+            clearModal();
+            document.getElementById('assessmentModal').style.display = 'block';
+        }
+
+        function editAssessment(index) {
+            if (currentMode === 'view') return;
+            editingRowIndex = index;
+            const assessment = assessments[index];
+            populateModal(assessment);
+            document.getElementById('assessmentModal').style.display = 'block';
+        }
+
+        function deleteAssessment(index) {
+            if (currentMode === 'view') return;
+            if (confirm('Are you sure you want to delete this assessment?')) {
+                assessments.splice(index, 1);
+                renderAssessmentTable();
+            }
+        }
+
+        function viewAssessment(index) {
+            editingRowIndex = index;
+            const assessment = assessments[index];
+            populateModal(assessment);
+            
+            // Make modal readonly
+            const modalInputs = document.getElementById('assessmentDetailForm').querySelectorAll('input, select, textarea');
+            modalInputs.forEach(input => {
+                input.setAttribute('readonly', true);
+                input.classList.add('readonly');
+            });
+            
+            document.getElementById('assessmentModal').style.display = 'block';
+        }
+
+        function clearModal() {
+            const form = document.getElementById('assessmentDetailForm');
+            form.reset();
+            document.getElementById('modalRowIndex').value = '';
+            
+            // Remove readonly attributes
+            const modalInputs = form.querySelectorAll('input, select, textarea');
+            modalInputs.forEach(input => {
+                input.removeAttribute('readonly');
+                input.classList.remove('readonly');
+            });
+        }
+
+        function populateModal(assessment) {
+            document.getElementById('modalBusinessProcess').value = assessment.businessProcess || '';
+            document.getElementById('modalMainProcess').value = assessment.mainProcess || '';
+            document.getElementById('modalSubProcess').value = assessment.subProcess || '';
+            document.getElementById('modalKeyRisk').value = assessment.keyRisk || '';
+            document.getElementById('modalLikelihoodImpact').value = assessment.likelihoodImpact || '';
+            document.getElementById('modalRiskCategory').value = assessment.riskCategory || '';
+            document.getElementById('modalDate').value = assessment.date || '';
+            document.getElementById('modalMitigatingControls').value = assessment.mitigatingControls || '';
+            document.getElementById('modalPreventive').value = assessment.preventive || '';
+            document.getElementById('modalResponsive').value = assessment.responsive || '';
+            document.getElementById('modalFrequency').value = assessment.frequency || '';
+            document.getElementById('modalEvidence').value = assessment.evidence || '';
+            document.getElementById('modalAuditors').value = assessment.auditors || '';
+            document.getElementById('modalRecommendation').value = assessment.recommendation || '';
+            document.getElementById('modalResponsible').value = assessment.responsible || '';
+            document.getElementById('modalAgreedDate').value = assessment.agreedDate || '';
+            document.getElementById('modalAdjustedLikelihood').value = assessment.adjustedLikelihood || '';
+        }
+
+        function saveAssessment() {
+            if (currentMode === 'view') return;
+            
+            const formData = new FormData(document.getElementById('assessmentDetailForm'));
+            const assessment = Object.fromEntries(formData.entries());
+
+            if (editingRowIndex === -1) {
+                // Adding new assessment
+                assessments.push(assessment);
+            } else {
+                // Editing existing assessment
+                assessments[editingRowIndex] = assessment;
+            }
+
+            renderAssessmentTable();
+            closeModal();
+        }
+
+        function renderAssessmentTable() {
+            const tbody = document.getElementById('assessmentTableBody');
+            tbody.innerHTML = '';
+
+            assessments.forEach((assessment, index) => {
+                const row = document.createElement('tr');
+                
+                // Apply risk level styling
+                if (assessment.likelihoodImpact === 'High') {
+                    row.classList.add('risk-level-high');
+                } else if (assessment.likelihoodImpact === 'Medium') {
+                    row.classList.add('risk-level-medium');
+                } else if (assessment.likelihoodImpact === 'Low') {
+                    row.classList.add('risk-level-low');
+                }
+
+                const actionsHTML = currentMode === 'view' 
+                    ? `<button type="button" class="btn btn-secondary" onclick="viewAssessment(${index})">View</button>`
+                    : `
+                        <button type="button" class="btn btn-primary" onclick="editAssessment(${index})">Edit</button>
+                        <button type="button" class="btn btn-danger" onclick="deleteAssessment(${index})">Delete</button>
+                    `;
+
+                row.innerHTML = `
+                    <td>${assessment.businessProcess || 'N/A'}</td>
+                    <td>${assessment.mainProcess || 'N/A'}</td>
+                    <td>${assessment.subProcess || 'N/A'}</td>
+                    <td>${assessment.keyRisk || 'N/A'}</td>
+                    <td>${assessment.likelihoodImpact || 'N/A'}</td>
+                    <td>${assessment.riskCategory || 'N/A'}</td>
+                    <td>${assessment.date || 'N/A'}</td>
+                    <td>${assessment.mitigatingControls || 'N/A'}</td>
+                    <td>${assessment.preventive || 'N/A'}</td>
+                    <td>${assessment.responsive || 'N/A'}</td>
+                    <td>${assessment.frequency || 'N/A'}</td>
+                    <td>${assessment.evidence || 'N/A'}</td>
+                    <td>${assessment.auditors || 'N/A'}</td>
+                    <td>${assessment.recommendation || 'N/A'}</td>
+                    <td>${assessment.responsible || 'N/A'}</td>
+                    <td>${assessment.agreedDate || 'N/A'}</td>
+                    <td>${assessment.adjustedLikelihood || 'N/A'}</td>
+                    <td style="white-space: nowrap;">${actionsHTML}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('assessmentModal').style.display = 'none';
+            editingRowIndex = -1;
+            clearModal();
+        }
+
+        function goBack() {
+            if (confirm('Are you sure you want to go back? Any unsaved changes will be lost.')) {
+                window.history.back();
+            }
+        }
+
+        function saveForm() {
+            const formData = new FormData(document.getElementById('riskAssessmentForm'));
+            const data = Object.fromEntries(formData.entries());
+            data.assessments = assessments;
+            
+            console.log('Saving form data:', data);
+            alert('Form saved successfully!');
+        }
+
+        // Form submission handler
+        document.getElementById('riskAssessmentForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData.entries());
+            data.assessments = assessments;
+            
+            console.log('Submitting form data:', data);
+            alert('Risk Assessment submitted successfully!');
+        });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('assessmentModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+
+        // Initialize form on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // You can change this to test different modes
+            // initializeForm('view', sampleData); // for view mode
+            // initializeForm('edit', sampleData); // for edit mode
+            initializeForm('create'); // for create mode
+        });
+
+        // Sample data for testing
+        const sampleData = {
+            client: "Sample Client Corp",
+            assessmentPeriod: "Q1 2024",
+            assessor: "John Doe",
+            approvedBy: "Jane Smith",
+            assessments: [
+                {
+                    businessProcess: "Financial Reporting",
+                    mainProcess: "Monthly Closing",
+                    subProcess: "Journal Entry Review",
+                    keyRisk: "Unauthorized journal entries",
+                    likelihoodImpact: "Medium",
+                    riskCategory: "Financial Risk",
+                    date: "2024-01-15",
+                    mitigatingControls: "Manager approval required",
+                    preventive: "Yes",
+                    responsive: "No",
+                    frequency: "Monthly",
+                    evidence: "Approval signatures",
+                    auditors: "Internal Audit Team",
+                    recommendation: "Implement automated controls",
+                    responsible: "Finance Manager",
+                    agreedDate: "2024-02-01",
+                    adjustedLikelihood: "Low"
+                }
+            ]
+        };
+    </script>
+</body>
+</html>

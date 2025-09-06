@@ -12,6 +12,9 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Your API", Version = "v1" });
 });
 
+// Add HttpClient for workflow service integration
+builder.Services.AddHttpClient();
+
 //Add scoped dependency injection 
 builder.Services.AddScoped<IUserRepository, UserRepository>(provider =>
     new UserRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
@@ -24,6 +27,11 @@ builder.Services.AddScoped<IRiskHeatMapRepository, RiskHeatMapRepository>(provid
     new RiskHeatMapRepository (builder.Configuration.GetConnectionString("RiskAssessment")));
 
 builder.Services.AddControllers();
+
+// Add configuration for workflow service
+builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true);
+builder.Configuration.AddEnvironmentVariables();
 
 var app = builder.Build();
 

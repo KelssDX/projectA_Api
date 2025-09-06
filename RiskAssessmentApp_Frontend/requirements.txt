@@ -1,0 +1,33 @@
+# GUI Framework
+flet>=0.21.0
+
+# Database
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.0
+
+# HTTP Client for API Calls
+aiohttp>=3.9.0
+
+# Utilities
+python-dateutil>=2.8.2
+
+# PDF Generation
+reportlab>=4.0.0
+
+# Excel Export
+openpyxl>=3.1.2
+xlsxwriter>=3.1.0
+
+# Data Processing
+pandas>=2.0.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Validation
+pydantic>=2.5.0
+
+# Security
+bcrypt>=4.0.0
+passlib>=1.7.4
+python-jose[cryptography]>=3.3.0

@@ -10,16 +10,17 @@ namespace Affine.Auditing.API.Controllers
     {
         private readonly IRiskHeatMapRepository _riskHeatMapRepository;
 
-        public RiskGraphsController(RiskHeatMapRepository riskHeatMapRepository)
+        // Use the interface for dependency injection consistency
+        public RiskGraphsController(IRiskHeatMapRepository riskHeatMapRepository)
         {
             _riskHeatMapRepository = riskHeatMapRepository;
         }
 
         [HttpGet]
         [Route("GetHeatmap")]
-        public async Task<IActionResult> GetHeatmap(int referenceId)
+        public async Task<IActionResult> GetHeatmap(int referenceId, int? departmentId = null)
         {
-            var heatmap = await _riskHeatMapRepository.GetRiskHeatmapAsync(referenceId);
+            var heatmap = await _riskHeatMapRepository.GetRiskHeatmapAsync(referenceId, departmentId);
 
             if (heatmap == null)
             {

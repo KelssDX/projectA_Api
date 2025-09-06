@@ -19,7 +19,7 @@ namespace Affine.Engine.Repository.Auditing
         {
             _connectionString = connectionString;
         }
-        public async Task<RiskHeatmapResponse> GetRiskHeatmapAsync(int referenceId)
+        public async Task<RiskHeatmapResponse> GetRiskHeatmapAsync(int referenceId, int? departmentId = null)
 {
     using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
     dbConnection.Open();
@@ -27,18 +27,20 @@ namespace Affine.Engine.Repository.Auditing
     try
     {
         // Query to aggregate risks by likelihood and impact
-        string heatmapQuery = @"
-            SELECT 
-                rl.Name AS Likelihood,
-                ri.Name AS Impact,
-                COUNT(*) AS Count
-            FROM RiskAssessment ra
-            INNER JOIN RiskLikelihood rl ON ra.RiskLikelihoodId = rl.Id
-            INNER JOIN RiskImpact ri ON ra.RiskImpactId = ri.Id
-            WHERE ra.ReferenceId = @ReferenceId
-            GROUP BY rl.Name, ri.Name";
+                var heatmapQuery = new StringBuilder();
+                // Align with actual table names used by the RA schema (RA_RiskLikelihood/RA_RiskImpact)
+                heatmapQuery.Append(@"SELECT rl.description AS Likelihood, ri.description AS Impact, COUNT(*) AS Count
+                                     FROM RiskAssessment ra
+                                     INNER JOIN RA_RiskLikelihood rl ON ra.RiskLikelihoodId = rl.Id
+                                     INNER JOIN RA_RiskImpact ri ON ra.RiskImpactId = ri.Id
+                                     WHERE ra.ReferenceId = @ReferenceId");
+                if (departmentId.HasValue)
+                {
+                    heatmapQuery.Append(" AND ra.DepartmentId = @DepartmentId");
+                }
+                heatmapQuery.Append(" GROUP BY rl.Name, ri.Name");
 
-        var heatmapData = await dbConnection.QueryAsync<HeatmapData>(heatmapQuery, new { ReferenceId = referenceId });
+                var heatmapData = await dbConnection.QueryAsync<HeatmapData>(heatmapQuery.ToString(), new { ReferenceId = referenceId, DepartmentId = departmentId });
 
         // Transform the data into a heatmap grid
         var grid = new Dictionary<string, Dictionary<string, int>>();

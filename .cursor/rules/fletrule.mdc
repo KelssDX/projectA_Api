@@ -1,0 +1,5 @@
+---
+description:just make sure to not repeat mistakes by using icons in lower case or other Flet functions in lower case as that will create an error, you are using version 0.21.0 so make sure all coding changes fit this version. 
+globs:
+alwaysApply: true
+---
