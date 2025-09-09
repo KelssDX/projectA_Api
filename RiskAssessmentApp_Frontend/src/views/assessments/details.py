@@ -5,18 +5,31 @@ from src.api.client import APIClient
 import asyncio
 from src.controllers.export_controller import ExportController
 from datetime import datetime
+from src.views.common.base_view import BaseView
 
 
-class AssessmentDetailsView(ft.Container):
+class AssessmentDetailsView(BaseView):
     def __init__(self, page: ft.Page, user: User, assessment_id=None, on_back=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.assessment_id = assessment_id
         self.on_back = on_back
         self.api_client = APIClient()
         self.export_controller = ExportController()
-        self.expand = True
+        # Initialize BaseView header with actions
+        actions = [
+            ft.PopupMenuButton(
+                items=[
+                    ft.PopupMenuItem(text="Export to PDF", icon=Icons.PICTURE_AS_PDF, on_click=lambda e: self.export_assessment("pdf")),
+                    ft.PopupMenuItem(text="Export to Excel", icon=Icons.TABLE_CHART, on_click=lambda e: self.export_assessment("excel")),
+                    ft.PopupMenuItem(text="Edit Assessment", icon=Icons.EDIT, on_click=self.edit_assessment),
+                    ft.PopupMenuItem(text="Delete Assessment", icon=Icons.DELETE, on_click=self.delete_assessment),
+                ],
+                tooltip="Actions",
+                icon=Icons.MORE_VERT,
+            )
+        ]
+        super().__init__(page, "Assessment Details", on_back=self.handle_back, actions=actions)
 
         # State
         self.assessment = None
@@ -29,61 +42,12 @@ class AssessmentDetailsView(ft.Container):
             self.page.run_task(self.load_assessment)
 
     def setup_view(self):
-        # Header with navigation
-        self.header = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.IconButton(
-                                icon=Icons.ARROW_BACK,
-                                on_click=self.handle_back,
-                                tooltip="Back to list",
-                            ),
-                            ft.Text(
-                                "Assessment Details",
-                                size=32,
-                                weight=ft.FontWeight.BOLD,
-                            ),
-                            ft.Container(expand=True),
-                            ft.PopupMenuButton(
-                                items=[
-                                    ft.PopupMenuItem(
-                                        text="Export to PDF",
-                                        icon=Icons.PICTURE_AS_PDF,
-                                        on_click=lambda e: self.export_assessment("pdf"),
-                                    ),
-                                    ft.PopupMenuItem(
-                                        text="Export to Excel",
-                                        icon=Icons.TABLE_CHART,
-                                        on_click=lambda e: self.export_assessment("excel"),
-                                    ),
-                                    ft.PopupMenuItem(
-                                        text="Edit Assessment",
-                                        icon=Icons.EDIT,
-                                        on_click=self.edit_assessment,
-                                    ),
-                                    ft.PopupMenuItem(
-                                        text="Delete Assessment",
-                                        icon=Icons.DELETE,
-                                        on_click=self.delete_assessment,
-                                    ),
-                                ],
-                                tooltip="Actions",
-                                icon=Icons.MORE_VERT,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.START,
-                    ),
-                    ft.Text(
-                        "Loading assessment details...",
-                        size=16,
-                        color=ft.Colors.BLACK54,
-                    ),
-                ]
-            ),
-            padding=ft.padding.only(bottom=20),
-        )
+        # Body placeholder card (loading → details)
+        self._body = ft.Container(expand=True, content=ft.Column([
+            ft.Row([ft.ProgressRing(), ft.Text("Loading assessment details...")], spacing=10)
+        ]))
+        self.cards_column.controls.clear()
+        self.add_card(self._body)
 
         # Assessment details sections
 
@@ -403,8 +367,8 @@ class AssessmentDetailsView(ft.Container):
         content_section.controls[7].content.value = self.assessment.get("recommendations",
                                                                         "No recommendations specified")
 
-        # Replace loading indicator with actual content
-        self.content.controls[1] = ft.Column(
+        # Replace loading indicator with actual content inside body placeholder
+        self._body.content = ft.Column(
             [
                 self.basic_info_section,
                 ft.Container(height=20),

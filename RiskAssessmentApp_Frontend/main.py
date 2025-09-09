@@ -2,6 +2,7 @@ import flet as ft
 from flet import Icons
 import os
 import asyncio
+import traceback
 
 from src.views.dashboard.dashboard import DashboardView
 from src.views.assessments.list import AssessmentListView
@@ -531,6 +532,10 @@ class RiskAssessmentApp:
             self.page.update()
         except Exception as e:
             print(f"Error in on_login: {e}")
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
             self.page.controls = [ft.Text(f"Error after login: {str(e)}")]
             self.page.update()
 

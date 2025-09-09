@@ -4,19 +4,18 @@ from datetime import datetime
 from src.controllers.assessment_controller import AssessmentController
 from src.utils.export_utils import ExportManager
 from src.utils.formatters import format_date, format_currency
+from src.views.common.base_view import BaseView
 import json
 
 
-class ModernAssessmentDetails(ft.Container):
+class ModernAssessmentDetails(BaseView):
     def __init__(self, page, user, assessment_id=None, reference_id=None, on_back=None, on_edit=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.assessment_id = assessment_id
         self.reference_id = reference_id
         self.on_back_callback = on_back
         self.on_edit_callback = on_edit
-        self.expand = True
         
         # Controllers
         self.assessment_controller = AssessmentController()
@@ -29,6 +28,29 @@ class ModernAssessmentDetails(ft.Container):
         self.comments = []
         self.workflow_status = "In Progress"
         
+        # Header actions in BaseView
+        actions = [
+            ft.ElevatedButton(
+                text="Start Control Testing",
+                icon=ft.Icons.PLAY_CIRCLE_OUTLINE,
+                bgcolor="#f39c12",
+                color="white",
+                on_click=self._start_control_testing,
+            ),
+            ft.PopupMenuButton(
+                items=[
+                    ft.PopupMenuItem(text="Export to PDF", icon=ft.Icons.PICTURE_AS_PDF, on_click=lambda e: self._export_assessment("pdf")),
+                    ft.PopupMenuItem(text="Export to Excel", icon=ft.Icons.TABLE_VIEW, on_click=lambda e: self._export_assessment("excel")),
+                    ft.PopupMenuItem(text="Share Assessment", icon=ft.Icons.SHARE, on_click=self._share_assessment),
+                    ft.PopupMenuItem(),
+                    ft.PopupMenuItem(text="Edit Assessment", icon=ft.Icons.EDIT, on_click=self._edit_assessment),
+                    ft.PopupMenuItem(text="Archive Assessment", icon=ft.Icons.ARCHIVE, on_click=self._archive_assessment),
+                ],
+                icon=ft.Icons.MORE_VERT,
+            )
+        ]
+        super().__init__(page, f"Risk Assessment: {reference_id or ''}", on_back=self._handle_back, actions=actions)
+
         # Initialize view
         self._init_view()
     
@@ -77,10 +99,6 @@ class ModernAssessmentDetails(ft.Container):
     
     def _build_ui(self):
         """Build the main UI structure"""
-        # Header with actions
-        header = self._build_header()
-        
-        
         # Main content tabs
         tabs = self._build_content_tabs()
         
@@ -88,88 +106,15 @@ class ModernAssessmentDetails(ft.Container):
         action_panel = self._build_action_panel()
         
         # Layout
-        self.content = ft.Column([
-            header,
-            ft.Divider(height=1, color="#e6e9ed"),
+        main_panel = ft.Column([
             tabs,
             ft.Divider(height=1, color="#e6e9ed"),
             action_panel
         ], spacing=0, expand=True)
+        self.cards_column.controls.clear()
+        self.add_card(main_panel)
     
-    def _build_header(self):
-        """Build the header section"""
-        return ft.Container(
-            height=80,
-            bgcolor="white",
-            padding=ft.padding.symmetric(horizontal=30, vertical=15),
-            content=ft.Row([
-                ft.IconButton(
-                    icon=ft.icons.ARROW_BACK,
-                    icon_size=24,
-                    on_click=self._handle_back,
-                    tooltip="Back to assessments"
-                ),
-                ft.Column([
-                    ft.Text(
-                        f"Risk Assessment: {self.reference_id or 'Loading...'}",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color="#2c3e50"
-                    ),
-                    ft.Text(
-                        "Comprehensive assessment details and management",
-                        size=12,
-                        color="#7f8c8d"
-                    )
-                ], spacing=2),
-                ft.Container(expand=True),
-                
-                # Quick actions
-                ft.Row([
-                    ft.ElevatedButton(
-                        text="Start Control Testing",
-                        icon=ft.Icons.PLAY_CIRCLE_OUTLINE,
-                        bgcolor="#f39c12",
-                        color="white",
-                        on_click=self._start_control_testing,
-                        tooltip="Initiate control testing workflow"
-                    ),
-                    ft.Container(width=10),
-                    ft.PopupMenuButton(
-                        items=[
-                            ft.PopupMenuItem(
-                                text="Export to PDF",
-                                icon=ft.Icons.PICTURE_AS_PDF,
-                                on_click=lambda e: self._export_assessment("pdf")
-                            ),
-                            ft.PopupMenuItem(
-                                text="Export to Excel",
-                                icon=ft.Icons.TABLE_VIEW,
-                                on_click=lambda e: self._export_assessment("excel")
-                            ),
-                            ft.PopupMenuItem(
-                                text="Share Assessment",
-                                icon=ft.Icons.SHARE,
-                                on_click=self._share_assessment
-                            ),
-                            ft.PopupMenuItem(),  # Divider
-                            ft.PopupMenuItem(
-                                text="Edit Assessment",
-                                icon=ft.Icons.EDIT,
-                                on_click=self._edit_assessment
-                            ),
-                            ft.PopupMenuItem(
-                                text="Archive Assessment",
-                                icon=ft.Icons.ARCHIVE,
-                                on_click=self._archive_assessment
-                            )
-                        ],
-                        icon=ft.Icons.MORE_VERT,
-                        tooltip="More actions"
-                    )
-                ])
-            ])
-        )
+    # Legacy header removed; BaseView header is used.
     
     def _build_status_bar(self):
         """Build the status indicator bar"""

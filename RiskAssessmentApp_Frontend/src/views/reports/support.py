@@ -2,27 +2,16 @@ import flet as ft
 from flet import Icons
 from src.models.user import User
 from src.utils.theme import get_theme_colors, create_modern_card, create_modern_button, apply_theme_to_control
+from src.views.common.base_view import BaseView
 
 
-class SupportView(ft.Container):
+class SupportView(BaseView):
     def __init__(self, page, user):
-        super().__init__()
         self.page = page
         self.user = user
-        self.expand = True
-
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
-        # Header
-        header = ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    ft.Text("Support Tickets", size=22, weight=ft.FontWeight.BOLD, color=colors.text_primary),
-                    ft.Text("Manage and track support issues", size=12, color=colors.text_secondary)
-                ], alignment=ft.CrossAxisAlignment.START),
-                ft.Container(expand=True),
-                create_modern_button(colors, "New Ticket", icon=Icons.ADD, on_click=self.create_new_ticket, style="primary")
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
+        actions = [create_modern_button(colors, "New Ticket", icon=Icons.ADD, on_click=self.create_new_ticket, style="primary")]
+        super().__init__(page, "Support Tickets", actions=actions, colors=colors)
 
         # Action bar
         action_bar = create_modern_card(
@@ -57,25 +46,12 @@ class SupportView(ft.Container):
         # Tickets table
         tickets_table = self.create_tickets_table()
 
-        # Main content
-        main_content = ft.Container(
-            expand=True,
-            bgcolor=colors.bg,
-            content=ft.Column([
-                action_bar,
-                ft.Container(height=12),
-                create_modern_card(colors, tickets_table)
-            ], spacing=0, expand=True)
-        )
-
-        # Assemble the view
-        self.content = ft.Column([
-            header,
-            main_content
-        ], spacing=0, expand=True)
+        # Compose as cards under BaseView
+        self.cards_column.controls.clear()
+        self.add_card(action_bar)
+        self.add_card(tickets_table)
 
         try:
-            self.bgcolor = colors.bg
             apply_theme_to_control(self, colors)
             if hasattr(self, 'page') and self.page:
                 self.page.update()

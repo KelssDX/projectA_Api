@@ -7,11 +7,11 @@ from src.utils.theme import (
     create_modern_button,
     apply_theme_to_control,
 )
+from src.views.common.base_view import BaseView
 
 
-class DepartmentsView(ft.Container):
+class DepartmentsView(BaseView):
     def __init__(self, page):
-        super().__init__()
         self.page = page
         self.departments = []
         self.filtered_departments = []
@@ -20,6 +20,8 @@ class DepartmentsView(ft.Container):
         self.left_flex = getattr(self, "left_flex", 1)
         self.center_flex = getattr(self, "center_flex", 4)
         self.auditing_client = AuditingAPIClient()
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        super().__init__(page, "Departments", on_search=self.on_search_change, colors=colors)
         self._build_ui()
         self.load_departments()  # Load departments from API
 
@@ -83,43 +85,8 @@ class DepartmentsView(ft.Container):
                 self.page.update()
 
     def _build_ui(self):
-        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
-
-        # Search and filter controls (styled like user_management.py)
-        self._search_input = ft.TextField(
-            border=ft.InputBorder.NONE,
-            color="#2c3e50",
-            hint_text="Search departments",
-            hint_style=ft.TextStyle(color="#95a5a6", size=14),
-            expand=True,
-            height=30,
-            content_padding=5,
-            on_change=self.on_search_change,
-        )
-        self.search_field = ft.Container(
-            width=240,
-            height=30,
-            bgcolor="#f5f7fa",
-            border=ft.border.all(1, "#e6e9ed"),
-            border_radius=15,
-            padding=ft.padding.only(left=10, right=10),
-            content=ft.Row([
-                ft.Icon(Icons.SEARCH, color="#95a5a6", size=18),
-                self._search_input,
-            ])
-        )
-
-        header = ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    ft.Text("Departments", size=24, weight=ft.FontWeight.BOLD, color=colors.text_primary),
-                    ft.Text("Manage organizational departments", size=14, color=colors.text_secondary),
-                ], alignment=ft.CrossAxisAlignment.START),
-                ft.Row([
-                    self.search_field,
-                ], spacing=12)
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
+        # Use BaseView-provided colors and header; only build filters and body cards here
+        colors = self.colors
 
         self.risk_filter = ft.Dropdown(
             label="Risk Level",
@@ -138,12 +105,7 @@ class DepartmentsView(ft.Container):
             self.risk_filter,
         ], alignment=ft.MainAxisAlignment.START)
 
-        filters_card = create_modern_card(
-            colors,
-            ft.Row([
-                filter_row
-            ], alignment=ft.MainAxisAlignment.START)
-        )
+        # Compose cards via BaseView
 
         # Status message area
         self.status_message = ft.Container(
@@ -164,40 +126,22 @@ class DepartmentsView(ft.Container):
 
         # Departments table container
         self.departments_table_container = ft.Container(expand=True, content=None)
-        self.refresh_table()
-
-        # Top panel: search + risk filter + actions
-        top_panel = create_modern_card(
-            colors,
-            ft.Column([
-                ft.Row([self.risk_filter], spacing=10),
-                ft.Row([
-                    ft.Container(expand=True),
-                    create_modern_button(colors, "Add Department", icon=Icons.ADD, on_click=self.show_add_department_dialog, style="success"),
-                    create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=lambda e: self.refresh_departments(), style="secondary"),
-                ], alignment=ft.MainAxisAlignment.END)
-            ], spacing=10)
-        )
-
-
-        main_content = ft.Column([
-            header,
-            ft.Container(height=16),
-            top_panel,
-            ft.Container(height=12),
+        # Build cards under BaseView
+        self.cards_column.controls.clear()
+        top_row = ft.Row([
+            self.risk_filter,
+            ft.Container(expand=True),
+            create_modern_button(colors, "Add Department", icon=Icons.ADD, on_click=self.show_add_department_dialog, style="success"),
+            create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=lambda e: self.refresh_departments(), style="secondary"),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        self.add_card(top_row)
+        status_section = ft.Column([
             self.status_message,
             ft.Container(content=self.loading_indicator, alignment=ft.alignment.center, height=40),
-            create_modern_card(colors, self.departments_table_container),
-        ], spacing=0, expand=True)
-
-        self.content = ft.Container(
-            content=main_content,
-            padding=ft.padding.all(24),
-            bgcolor=colors.bg,
-            expand=True,
-        )
-        self.bgcolor = colors.bg
-        self.expand = True
+        ], spacing=8)
+        self.add_card(status_section)
+        self.refresh_table()
+        self.add_card(self.departments_table_container)
 
     def refresh_departments(self):
         """Refresh departments from database"""
@@ -224,7 +168,8 @@ class DepartmentsView(ft.Container):
             self.show_status(f"Error refreshing departments: {str(e)}", is_error=True)
 
         self.loading_indicator.visible = False
-        self.update()
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
 
     def update_department_cards(self):
         """Legacy hook used elsewhere – now refreshes the table."""
@@ -277,7 +222,8 @@ class DepartmentsView(ft.Container):
         )
 
         self.departments_table_container.content = table
-        self.update()
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
 
     # ---- Resizable layout helpers (2-panels) ----
     def _build_resizable_row(self, left_panel, center_panel):

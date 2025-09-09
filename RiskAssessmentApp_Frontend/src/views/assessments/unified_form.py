@@ -10,11 +10,11 @@ from src.utils.theme import (
     create_modern_card,
     create_modern_button,
 )
+from src.views.common.base_view import BaseView
 
 
-class UnifiedAssessmentForm(ft.Container):
+class UnifiedAssessmentForm(BaseView):
     def __init__(self, page, user, mode="create", reference_id=None, assessment=None, on_save=None, on_cancel=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.mode = mode  # "create" | "edit" | "view"
@@ -22,7 +22,12 @@ class UnifiedAssessmentForm(ft.Container):
         self.assessment = assessment or {}
         self.on_save_callback = on_save
         self.on_cancel_callback = on_cancel
-        self.expand = True
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        actions = [
+            create_modern_button(colors, "Back", on_click=self._handle_back, style="secondary", width=90),
+            create_modern_button(colors, "Save", icon=Icons.SAVE, on_click=self._handle_save, style="primary", width=100),
+        ]
+        super().__init__(page, "Risk Assessment Form", actions=actions, colors=colors)
 
         # Controllers
         self.assessment_controller = AssessmentController()
@@ -132,13 +137,20 @@ class UnifiedAssessmentForm(ft.Container):
             ft.Container(content=create_modern_button(colors, "Save", icon=Icons.SAVE, on_click=self._handle_save, style="primary", width=120), ref=lambda c: setattr(self, "save_btn_footer", c)),
         ], alignment=ft.MainAxisAlignment.END)
 
-        self.content = ft.Column([
-            header,
-            ft.Container(padding=20, content=meta_card),
-            ft.Container(padding=20, content=table_wrap),
-            ft.Container(padding=20, content=create_modern_card(colors, self.comments_ta)),
-            ft.Container(padding=ft.padding.symmetric(horizontal=20, vertical=12), content=footer)
-        ], expand=True, scroll=ft.ScrollMode.AUTO)
+        # Compose as cards under BaseView (avoid double-wrapping where already a card)
+        self.cards_column.controls.clear()
+        # Optional small controls row (use compact controls instead of full header)
+        header_controls = ft.Row([
+            ft.Text("Mode:", size=12, color="#94a3b8"),
+            ft.Dropdown(value=self.mode, options=[
+                ft.dropdown.Option("create"), ft.dropdown.Option("edit"), ft.dropdown.Option("view")
+            ], on_change=self._on_mode_change, width=160),
+        ], alignment=ft.MainAxisAlignment.END)
+        self.add_card(header_controls)
+        self.cards_column.controls.append(meta_card)
+        self.cards_column.controls.append(table_wrap)
+        self.cards_column.controls.append(create_modern_card(colors, self.comments_ta))
+        self.add_card(footer)
 
         # Prepare modal for add/edit item
         self._build_item_modal()

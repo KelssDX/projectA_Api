@@ -4,11 +4,11 @@ from src.models.assessment import Assessment
 from datetime import datetime
 import asyncio
 from src.controllers.assessment_controller import AssessmentController
+from src.views.common.base_view import BaseView
 
 
-class AssessmentFormView(ft.Container):
+class AssessmentFormView(BaseView):
     def __init__(self, page, user, assessment=None, on_save=None, on_cancel=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.assessment = assessment or Assessment(
@@ -19,7 +19,6 @@ class AssessmentFormView(ft.Container):
         )
         self.on_save_callback = on_save
         self.on_cancel_callback = on_cancel
-        self.expand = True
         self.assessment_controller = AssessmentController()
 
         # Lookup data
@@ -104,43 +103,19 @@ class AssessmentFormView(ft.Container):
             expand=True
         )
 
-        # Create header
-        header = ft.Container(
-            height=60,
-            bgcolor=None,
-            border=ft.border.only(bottom=ft.BorderSide(1, "#e6e9ed")),
-            padding=ft.padding.only(left=30, right=30),
-            content=ft.Row([
-                ft.IconButton(
-                    icon=Icons.ARROW_BACK,
-                    icon_color=None,
-                    tooltip="Back to assessments",
-                    on_click=self.cancel_form
-                ),
-                ft.Text(
-                    "New Assessment" if self.assessment.id is None else f"Edit Assessment: {self.assessment.id}",
-                    size=22,
-                    weight=ft.FontWeight.BOLD
-                ),
-                ft.Container(expand=True),
-                ft.Container(
-                    margin=ft.margin.only(left=20),
-                    content=ft.Container(
-                        width=30,
-                        height=30,
-                        border_radius=15,
-                        bgcolor=None,
-                        alignment=ft.alignment.center,
-                        content=ft.Text(
-                            self.user["username"][0].upper() if isinstance(self.user,
-                                                                           dict) and "username" in self.user else "A",
-                            color=None,
-                            weight=ft.FontWeight.BOLD
-                        )
-                    )
-                )
-            ])
+        # Initialize BaseView header with actions
+        colors = ft.ThemeMode.LIGHT
+        if hasattr(self.page, "theme_mode"):
+            colors = self.page.theme_mode
+        actions = [
+            ft.ElevatedButton(text="Cancel", icon=Icons.CANCEL, on_click=self.cancel_form),
+            ft.ElevatedButton(text="Calculate Risk", icon=Icons.CALCULATE, on_click=self.calculate_risk),
+            ft.ElevatedButton(text="Save", icon=Icons.SAVE, on_click=self.save_assessment),
+        ]
+        title_text = (
+            "New Assessment" if self.assessment.id is None else f"Edit Assessment: {self.assessment.id}"
         )
+        super().__init__(page, title_text, actions=actions)
 
         # Build tabs content
         overview_tab = ft.Container(
@@ -371,7 +346,8 @@ class AssessmentFormView(ft.Container):
             ], spacing=12)
         )
 
-        form_tabs = ft.Tabs(selected_index=0, tabs=[
+        # Keep a stable reference to tabs for later updates
+        self._form_tabs = ft.Tabs(selected_index=0, tabs=[
             ft.Tab(text="Overview", content=overview_tab),
             ft.Tab(text="Risks", content=risks_tab),
             ft.Tab(text="Risk Factors", content=factors_tab),
@@ -380,16 +356,6 @@ class AssessmentFormView(ft.Container):
             ft.Tab(text="Evidence", content=evidence_tab),
             ft.Tab(text="Controls", content=controls_tab)
         ])
-
-        # Actions row
-        actions_row = ft.Row([
-            ft.Container(expand=True),
-            ft.ElevatedButton(text="Cancel", icon=Icons.CANCEL, on_click=self.cancel_form),
-            ft.Container(width=10),
-            ft.ElevatedButton(text="Calculate Risk", icon=Icons.CALCULATE, on_click=self.calculate_risk),
-            ft.Container(width=10),
-            ft.ElevatedButton(text="Save Assessment", icon=Icons.SAVE, on_click=self.save_assessment)
-        ], alignment=ft.MainAxisAlignment.END)
 
         # Load existing risk factors if any
         if self.assessment.risk_factors:
@@ -402,11 +368,10 @@ class AssessmentFormView(ft.Container):
             self.add_risk_factor_row("Risk Assessment Process", 0)
             self.add_risk_factor_row("Control Activities", 0)
 
-        # Assemble the view
-        self.content = ft.Column([
-            header,
-            ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, controls=[form_tabs])  # Use Column for scrolling
-        ], spacing=0, expand=True)
+        # Assemble the view inside a card under BaseView
+        main_column = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, controls=[self._form_tabs])
+        self.cards_column.controls.clear()
+        self.add_card(main_column)
 
         # Trigger async lookup loading for dropdowns and tabs
         self._init_async()
@@ -533,11 +498,9 @@ class AssessmentFormView(ft.Container):
                 text = c.get("name") if isinstance(c, dict) else str(c)
                 ctrl_list.controls.append(ft.ListTile(title=ft.Text(text)))
 
-            # Replace content in tabs (tab order changed)
-            tabs = self.content.controls[1].controls[0]  # inner Column -> Tabs
-            # Evidence at index 5 now
-            tabs.tabs[5].content = ft.Container(padding=10, content=evid_list)
-            tabs.tabs[6].content = ft.Container(padding=10, content=ctrl_list)
+            # Replace content in tabs using stored reference
+            self._form_tabs.tabs[5].content = ft.Container(padding=10, content=evid_list)
+            self._form_tabs.tabs[6].content = ft.Container(padding=10, content=ctrl_list)
 
             self.page.update()
         except Exception as ex:
@@ -928,7 +891,7 @@ class AssessmentFormView(ft.Container):
 
             # Approach 2: Re-create the list view directly
             print("Recreating list view directly")
-            from src.views.assessment.list import AssessmentListView
+            from src.views.assessments.list import AssessmentListView
             list_view = AssessmentListView(self.page, self.user)
 
             # Clear the page and add the new view
@@ -982,7 +945,7 @@ class AssessmentFormView(ft.Container):
                                 return
 
                         # If that fails, try to recreate the list view
-                        from src.views.assessment.list import AssessmentListView
+                        from src.views.assessments.list import AssessmentListView
                         list_view = AssessmentListView(page_ref, self.user)
                         page_ref.controls = [list_view]
                         page_ref.update()

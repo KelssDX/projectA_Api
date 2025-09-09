@@ -6,19 +6,18 @@ from src.utils.theme import (
     create_modern_card,
     create_modern_button,
 )
+from src.views.common.base_view import BaseView
 from src.models.assessment import Assessment
 from datetime import datetime
 from src.api.auditing_client import AuditingAPIClient
 
 
-class AssessmentListView(ft.Container):
+class AssessmentListView(BaseView):
     def __init__(self, page, user, reference_id=None, initial_filter=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.reference_id = reference_id
         self.initial_filter = initial_filter or {}
-        self.expand = True
         self.search_value = ""
         self.current_risk_filter = "All Levels"
         self.current_dept_filter = "All Departments"
@@ -33,49 +32,19 @@ class AssessmentListView(ft.Container):
         # Initialize assessments as empty list - all data comes from API
         self.assessments = []
         
+        # Initialize BaseView header
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        actions = [create_modern_button(colors, "+ Create", icon=Icons.ADD, on_click=self.create_assessment, style="success", width=140)]
+        super().__init__(page, "Risk Assessments", on_search=self.on_search_change, actions=actions, colors=colors)
+
         # Initialize the view
         self.build()
         
         # Load data from API
         self.load_data()
         
-        # Theme and search field styled like user_management.py
-        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
-        self._search_input = ft.TextField(
-            border=ft.InputBorder.NONE,
-            color="#2c3e50",
-            hint_text="Search assessments",
-            hint_style=ft.TextStyle(color="#95a5a6", size=14),
-            expand=True,
-            height=30,
-            content_padding=5,
-            on_change=self.on_search_change,
-        )
-        self.search_field = ft.Container(
-            width=240,
-            height=30,
-            bgcolor="#f5f7fa",
-            border=ft.border.all(1, "#e6e9ed"),
-            border_radius=15,
-            padding=ft.padding.only(left=10, right=10),
-            content=ft.Row([
-                ft.Icon(Icons.SEARCH, color="#95a5a6", size=18),
-                self._search_input,
-            ])
-        )
-
-        # Header
-        header = ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    ft.Text("Risk Assessments", size=22, weight=ft.FontWeight.BOLD, color=colors.text_primary),
-                    ft.Text("Browse and manage assessments", size=12, color=colors.text_secondary),
-                ], alignment=ft.CrossAxisAlignment.START),
-                ft.Container(expand=True),
-                self.search_field,
-                # Only one Create button in the filters bar below
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
+        # BaseView provides header + search; use theme colors for local controls
+        colors = self.colors
 
         # Risk level filter dropdown
         self.risk_filter = ft.Container(
@@ -110,17 +79,12 @@ class AssessmentListView(ft.Container):
             on_click=self.show_department_filter
         )
 
-        # Action bar: filters + create (match user_management layout)
-        action_bar = create_modern_card(
-            colors,
-            ft.Row([
-                self.risk_filter,
-                ft.Container(width=10),
-                self.dept_filter,
-                ft.Container(expand=True),
-                create_modern_button(colors, "+ Create", icon=Icons.ADD, on_click=self.create_assessment, style="success", width=140)
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
+        # Action bar: only filters; Create button is in BaseView header actions
+        action_bar = ft.Row([
+            self.risk_filter,
+            ft.Container(width=10),
+            self.dept_filter,
+        ], alignment=ft.MainAxisAlignment.START)
 
         # Assessments table
         self.assessments_table_container = ft.Container(
@@ -128,42 +92,32 @@ class AssessmentListView(ft.Container):
             content=None  # Will be set in refresh_table
         )
 
-        # Refresh the table with initial data
+        # Compose under BaseView as cards
+        self.cards_column.controls.clear()
+        self.add_card(action_bar)
+        # Initial table
         self.refresh_table()
-
-        # No footer/status bar per spec
-
-        # Main content: header already set; now action bar and table card, then status bar
-        dash_colors = colors
-        table_card = create_modern_card(dash_colors, self.assessments_table_container)
-        self._main_content_container = ft.Container(
-            expand=True,
-            bgcolor=dash_colors.bg,
-            content=ft.Column([
-                action_bar,
-                ft.Container(height=16),
-                table_card,
-            ], spacing=0, expand=True),
-        )
-
-        # Assemble the view
-        # Make the whole view scrollable for better UX on smaller screens
-        self.content = ft.Column([
-            header,
-            self._main_content_container,
-        ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
-
-        # Normalize colors to theme immediately
-        try:
-            colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
-            apply_theme_to_control(self, colors)
-        except Exception:
-            pass
+        self.add_card(self.assessments_table_container)
 
     def load_data(self):
         """Load assessments data when view is shown"""
         if hasattr(self, 'page') and self.page:
-            self.page.run_task(self._load_assessments_data)
+            self.page.run_task(self._load_assessments_data_safe)
+
+    async def _load_assessments_data_safe(self):
+        """Load assessments data from the API (clean implementation)."""
+        try:
+            api_assessments = await self.auditing_client.get_assessments()
+            self.assessments = [Assessment.from_json(a) for a in api_assessments] if api_assessments else []
+            self.refresh_table()
+            if hasattr(self, 'page') and self.page:
+                self.page.update()
+        except Exception as e:
+            print(f"Error loading assessments from API: {e}")
+            self.assessments = []
+            self.refresh_table()
+            if hasattr(self, 'page') and self.page:
+                self.page.update()
 
     async def _load_assessments_data(self):
         """Load assessments data from the API"""

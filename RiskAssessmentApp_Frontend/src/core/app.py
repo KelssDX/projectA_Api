@@ -13,13 +13,16 @@ sys.path.insert(0, str(src_path))
 
 from src.views.auth.login import LoginView
 from src.views.dashboard.dashboard import DashboardView
-from src.views.assessments.assessment.list import AssessmentListView
+from src.views.dashboard.heatmap import HeatmapView
+from src.views.assessments.list import AssessmentListView
 from src.views.departments.departments_view import DepartmentsView
 from src.views.projects.projects_view import ProjectsView
+from src.views.settings.settings_view import SettingsView
 from src.views.users.user_management import UserManagementView
 from src.views.support import SupportView
 from src.utils.theme import get_theme_colors, apply_theme_to_control
 from core.config import API_CONFIG
+from src.api.auditing_client import AuditingAPIClient
 
 
 class RiskAssessmentApp:
@@ -33,6 +36,7 @@ class RiskAssessmentApp:
         
         # View instances
         self.views = {}
+        self.auditing_client = None
         
     def main(self, page: ft.Page):
         """Main application entry point"""
@@ -77,13 +81,22 @@ class RiskAssessmentApp:
         """Initialize all application views"""
         print("Initializing views")
         
+        # Lazy init API clients
+        if self.auditing_client is None:
+            try:
+                self.auditing_client = AuditingAPIClient()
+            except Exception:
+                self.auditing_client = None
+        
         self.views = {
-            "dashboard": DashboardView(self.page, self.current_user),
+            "dashboard": DashboardView(self.page, self.auditing_client, self.on_navigate, self.current_user),
             "assessments": AssessmentListView(self.page, self.current_user),
             "departments": DepartmentsView(self.page),
             "projects": ProjectsView(self.page, self.current_user),
             "users": UserManagementView(self.page, self.current_user),
-            "support": SupportView(self.page, self.current_user)
+            "support": SupportView(self.page, self.current_user),
+            "settings": SettingsView(self.page, self.current_user),
+            "heatmap": HeatmapView(self.page, self.current_user, on_navigate=self.on_navigate),
         }
         
     def show_view(self, view_name):
@@ -98,6 +111,32 @@ class RiskAssessmentApp:
         
         # Create main layout with navigation
         self.create_main_layout(view)
+
+    def on_navigate(self, dest, sub=None, params=None):
+        """Handle in-app navigation requests from views/cards."""
+        try:
+            target = (dest or "").lower()
+            if target in self.views:
+                # Optionally pass simple filters to target views
+                if target == "assessments" and isinstance(params, dict):
+                    view = self.views.get("assessments")
+                    # Map common params
+                    status = params.get("status")
+                    if status:
+                        try:
+                            view.current_risk_filter = "All Levels"
+                            view.current_dept_filter = "All Departments"
+                            view.search_value = status.lower()
+                            view.refresh_table()
+                        except Exception:
+                            pass
+                self.current_view = target
+                self.show_view(target)
+            elif target == "dashboard":
+                self.current_view = "dashboard"
+                self.show_view("dashboard")
+        except Exception as e:
+            print(f"Navigation error: {e}")
         
     def create_main_layout(self, content_view):
         """Create the main application layout with navigation"""
@@ -138,6 +177,11 @@ class RiskAssessmentApp:
                     icon=ft.icons.HELP,
                     selected_icon=ft.icons.HELP,
                     label="Support"
+                ),
+                ft.NavigationRailDestination(
+                    icon=ft.icons.SETTINGS,
+                    selected_icon=ft.icons.SETTINGS,
+                    label="Settings"
                 ),
             ],
             on_change=self.on_nav_change,
@@ -199,7 +243,8 @@ class RiskAssessmentApp:
             "departments": 2,
             "projects": 3,
             "users": 4,
-            "support": 5
+            "support": 5,
+            "settings": 6,
         }
         return view_mapping.get(self.current_view, 0)
         
@@ -211,7 +256,8 @@ class RiskAssessmentApp:
             2: "departments",
             3: "projects",
             4: "users",
-            5: "support"
+            5: "support",
+            6: "settings",
         }
         
         selected_view = index_mapping.get(e.control.selected_index)

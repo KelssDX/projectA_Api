@@ -7,16 +7,26 @@ from src.utils.theme import (
     create_modern_button,
     apply_theme_to_control,
 )
+from src.views.common.base_view import BaseView
 
 
-class ProjectsView(ft.Container):
-    def __init__(self, page, api_base_url="http://localhost:8000/api"):
-        super().__init__()
+class ProjectsView(BaseView):
+    def __init__(self, page, user=None, api_base_url="http://localhost:8000/api"):
         self.page = page
+        self.user = user
         self.api_base_url = api_base_url  # Store API base URL for future use
         self.projects = []
         self.filtered_projects = []
         self.auditing_client = AuditingAPIClient()
+        # Theme and header actions
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        actions = [
+            create_modern_button(colors, "Add Project", icon=Icons.ADD, on_click=self.show_add_project_dialog, style="success"),
+            create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=lambda e: self.refresh_projects(), style="secondary"),
+        ]
+        super().__init__(page, "Projects", on_search=self.on_search_change, actions=actions, colors=colors)
+
+        # Build the controls area and table as cards
         self._build_ui()
         self.load_projects()  # Load projects from API
 
@@ -61,7 +71,8 @@ class ProjectsView(ft.Container):
 
         table = ft.Container(expand=True, content=ft.Column([header, list_view], spacing=0))
         self.projects_table_container.content = table
-        self.update()
+        if hasattr(self, "page") and self.page:
+            self.page.update()
 
     def create_project_row(self, proj, row_index):
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
@@ -208,15 +219,6 @@ class ProjectsView(ft.Container):
 
     def _build_ui(self):
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
-        # Header (no action buttons here to match user_management structure)
-        header = ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    ft.Text("Projects", size=24, weight=ft.FontWeight.BOLD, color=colors.text_primary),
-                    ft.Text("Manage project portfolio", size=14, color=colors.text_secondary),
-                ], alignment=ft.CrossAxisAlignment.START),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
 
         # Search field styled like user_management
         self._search_input = ft.TextField(
@@ -271,8 +273,6 @@ class ProjectsView(ft.Container):
             width=150
         )
 
-        # Add and refresh buttons
-
         # Status message area
         self.status_message = ft.Container(
             visible=False,
@@ -294,44 +294,24 @@ class ProjectsView(ft.Container):
         # Projects table container
         self.projects_table_container = ft.Container(expand=True, content=None)
 
-        # rows kept for future grouping if needed
+        # Controls card (filters). Search is provided by BaseView header; keep combinational filters here
+        controls_bar = ft.Row([
+            self.status_filter,
+            ft.Container(width=10),
+            self.risk_filter,
+        ], alignment=ft.MainAxisAlignment.START)
+        self.add_card(controls_bar)
 
-        controls_bar = create_modern_card(
-            colors,
-            ft.Row([
-                self.search_field,
-                ft.Container(width=10),
-                self.status_filter,
-                ft.Container(width=10),
-                self.risk_filter,
-                ft.Container(expand=True),
-                create_modern_button(colors, "Add Project", icon=Icons.ADD, on_click=self.show_add_project_dialog, style="success"),
-                create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=lambda e: self.refresh_projects(), style="secondary"),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
+        # Status + loading card
+        status_section = ft.Column([
+            self.status_message,
+            ft.Container(content=self.loading_indicator, alignment=ft.alignment.center, height=40),
+        ], spacing=8)
+        self.add_card(status_section)
 
         # Build initial table
         self.refresh_table()
-
-        # Main content
-        main_content = ft.Container(
-            content=ft.Column([
-                header,
-                ft.Container(height=16),
-                controls_bar,
-                ft.Container(height=12),
-                self.status_message,
-                ft.Container(content=self.loading_indicator, alignment=ft.alignment.center, height=40),
-                create_modern_card(colors, self.projects_table_container),
-            ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO),
-            padding=ft.padding.all(24),
-            bgcolor=colors.bg,
-            expand=True
-        )
-
-        self.content = main_content
-        self.bgcolor = colors.bg
-        self.expand = True
+        self.add_card(self.projects_table_container)
 
     def refresh_projects(self):
         """Refresh projects from database"""
@@ -470,7 +450,7 @@ class ProjectsView(ft.Container):
 
     def filter_projects(self, e):
         # Get search term, status and risk level
-        search_term = self.search_field.value.lower() if self.search_field.value else ""
+        search_term = getattr(self, "search_value", "")
         status = self.status_filter.value
         risk_level = self.risk_filter.value
 
@@ -495,6 +475,14 @@ class ProjectsView(ft.Container):
             self.show_status(f"Showing {count} of {total} projects")
         else:
             self.hide_status()
+
+    def on_search_change(self, e: ft.ControlEvent):
+        """Search handler for BaseView header search."""
+        try:
+            self.search_value = (e.control.value or "").lower()
+        except Exception:
+            self.search_value = ""
+        self.filter_projects(None)
 
     async def get_departments(self):
         """Get all departments for dropdown selection via API"""

@@ -9,24 +9,37 @@ from src.utils.theme import (
     create_stat_card,
     apply_theme_to_control,
 )
+from src.views.common.base_view import BaseView
 from src.controllers.assessment_controller import AssessmentController
 
 
-class HeatmapView(ft.Container):
+class HeatmapView(BaseView):
     def __init__(self, page, user, reference_id=None, on_navigate=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.reference_id = reference_id or 1  # Default reference ID
         self.on_navigate = on_navigate
         self.assessment_controller = AssessmentController()
         self.heatmap_data = None
-        self.expand = True
         self.enabled_levels = {"Critical": True, "High": True, "Medium": True, "Low": True, "Very Low": True}
         # Resizable panel flex values
         self.left_flex = getattr(self, "left_flex", 1)
         self.center_flex = getattr(self, "center_flex", 3)
         self.right_flex = getattr(self, "right_flex", 1)
+        # Header actions
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        self.reference_field = ft.TextField(
+            value=str(self.reference_id),
+            width=160,
+            label="Reference ID",
+            cursor_color=colors.text_primary,
+        )
+        actions = [
+            self.reference_field,
+            create_modern_button(colors, "Apply", icon=Icons.PLAY_ARROW, on_click=self.apply_reference_filter, style="primary"),
+            create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=self.refresh_heatmap, style="secondary"),
+        ]
+        super().__init__(page, "Risk Heatmap", actions=actions, colors=colors)
         
         # Initialize the view
         self._init_async()
@@ -57,32 +70,7 @@ class HeatmapView(ft.Container):
 
     def _build_ui(self):
         """Build the UI components"""
-        # Header
-        self.colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
         colors = self.colors
-
-        # Reference input (store for later use)
-        self.reference_field = ft.TextField(
-            value=str(self.reference_id),
-            width=160,
-            label="Reference ID",
-            cursor_color=colors.text_primary,
-        )
-
-        header = ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    ft.Text("Risk Heatmap", size=24, weight=ft.FontWeight.BOLD, color=colors.text_primary),
-                    ft.Text("Interactive risk matrix", size=14, color=colors.text_secondary),
-                ], alignment=ft.CrossAxisAlignment.START),
-                ft.Row([
-                    self.reference_field,
-                    ft.Container(width=8),
-                    create_modern_button(colors, "Apply", icon=Icons.PLAY_ARROW, on_click=self.apply_reference_filter, style="primary"),
-                    create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=self.refresh_heatmap, style="secondary"),
-                ], spacing=8)
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        )
 
         # Filter bar
         # Left filter panel (Dashboard-style card)
@@ -148,13 +136,11 @@ class HeatmapView(ft.Container):
         main_row = self._build_resizable_row(filter_panel, center_column, insights_panel)
 
         # Keep a reference to replace on drag
-        self._main_content_container = ft.Container(expand=True, content=main_row, padding=ft.padding.all(24), bgcolor=colors.bg)
+        self._main_content_container = ft.Container(expand=True, content=main_row)
 
-        # Assemble the view
-        self.content = ft.Column([
-            header,
-            self._main_content_container
-        ], spacing=0, expand=True)
+        # Add as a card under BaseView
+        self.cards_column.controls.clear()
+        self.add_card(self._main_content_container)
 
     # Theming hook
     def apply_theme(self, colors):

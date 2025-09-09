@@ -4,19 +4,18 @@ from datetime import datetime, date
 from src.controllers.assessment_controller import AssessmentController
 from src.controllers.user_controller import UserController
 from src.utils.formatters import format_date, format_currency
+from src.views.common.base_view import BaseView
 import json
 
 
-class ModernAssessmentForm(ft.Container):
+class ModernAssessmentForm(BaseView):
     def __init__(self, page, user, assessment_data=None, reference_id=None, on_save=None, on_cancel=None):
-        super().__init__()
         self.page = page
         self.user = user
         self.assessment_data = assessment_data
         self.reference_id = reference_id
         self.on_save_callback = on_save
         self.on_cancel_callback = on_cancel
-        self.expand = True
         
         # Controllers
         self.assessment_controller = AssessmentController()
@@ -34,6 +33,14 @@ class ModernAssessmentForm(ft.Container):
         self.content_container = None
         self.navigation_buttons = None
         
+        # Initialize BaseView header
+        title = "Risk Assessment Wizard" if not self.assessment_data else "Edit Risk Assessment"
+        actions = [
+            ft.ElevatedButton(text="Cancel", icon=ft.icons.CANCEL, on_click=self._handle_cancel),
+            ft.ElevatedButton(text="Save", icon=ft.icons.SAVE, on_click=self._save_assessment),
+        ]
+        super().__init__(page, title, actions=actions)
+
         # Initialize form
         self._init_form()
     
@@ -95,9 +102,6 @@ class ModernAssessmentForm(ft.Container):
     
     def _build_ui(self):
         """Build the main UI structure"""
-        # Header
-        header = self._build_header()
-        
         # Step indicator
         self.step_indicator = self._build_step_indicator()
         
@@ -111,53 +115,18 @@ class ModernAssessmentForm(ft.Container):
         # Navigation buttons
         self.navigation_buttons = self._build_navigation()
         
-        # Main layout
-        self.content = ft.Column([
-            header,
+        # Compose as a single card under BaseView
+        main_panel = ft.Column([
             self.step_indicator,
             ft.Divider(height=1, color="#e6e9ed"),
             self.content_container,
             ft.Divider(height=1, color="#e6e9ed"),
             self.navigation_buttons
         ], spacing=0, expand=True)
+        self.cards_column.controls.clear()
+        self.add_card(main_panel)
     
-    def _build_header(self):
-        """Build the form header"""
-        return ft.Container(
-            height=70,
-            bgcolor="white",
-            padding=ft.padding.symmetric(horizontal=30, vertical=15),
-            content=ft.Row([
-                ft.Icon(ft.icons.ASSESSMENT, size=28, color="#2c3e50"),
-                ft.Column([
-                    ft.Text(
-                        "Risk Assessment Wizard" if not self.assessment_data else "Edit Risk Assessment",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color="#2c3e50"
-                    ),
-                    ft.Text(
-                        f"Reference ID: {self.reference_id}" if self.reference_id else "Create comprehensive risk assessment",
-                        size=12,
-                        color="#7f8c8d"
-                    )
-                ], spacing=2),
-                ft.Container(expand=True),
-                ft.Container(
-                    width=40,
-                    height=40,
-                    border_radius=20,
-                    bgcolor="#3498db",
-                    alignment=ft.alignment.center,
-                    content=ft.Text(
-                        self.user.name[0] if self.user and self.user.name else "U",
-                        color="white",
-                        weight=ft.FontWeight.BOLD,
-                        size=16
-                    )
-                )
-            ])
-        )
+    # Legacy header removed; BaseView header is used.
     
     def _build_step_indicator(self):
         """Build the step progress indicator"""
