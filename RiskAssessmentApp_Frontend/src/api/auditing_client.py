@@ -1,4 +1,5 @@
 import aiohttp
+import asyncio
 import json
 from src.core.config import API_CONFIG, get_auditing_api_url
 
@@ -13,18 +14,31 @@ class AuditingAPIClient:
         self.session = None
     
     async def _ensure_session(self):
-        """Ensure HTTP session is created"""
+        """Ensure HTTP session is created for the current event loop"""
+        current_loop = asyncio.get_event_loop()
         if self.session is None or self.session.closed:
             connector = aiohttp.TCPConnector(ssl=self.verify_ssl)
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
             self.session = aiohttp.ClientSession(
                 connector=connector,
-                timeout=timeout,
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json"
                 }
             )
+        elif hasattr(self, '_session_loop') and self._session_loop != current_loop:
+            try:
+                await self.session.close()
+            except:
+                pass
+            connector = aiohttp.TCPConnector(ssl=self.verify_ssl)
+            self.session = aiohttp.ClientSession(
+                connector=connector,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                }
+            )
+        self._session_loop = current_loop
     
     async def get_risk_assessment(self, reference_id):
         """Get a risk assessment by reference ID"""
@@ -80,6 +94,42 @@ class AuditingAPIClient:
         except aiohttp.ClientError as e:
             raise Exception(f"Connection error: {str(e)}")
     
+    async def update_reference(self, reference_id, reference_data):
+        """Update a risk assessment reference (header info like Assessor)"""
+        await self._ensure_session()
+        
+        url = get_auditing_api_url("update_reference") + f"/{reference_id}"
+        
+        try:
+            async with self.session.put(url, json=reference_data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to update reference: {error_text}")
+                    
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+    
+    async def delete_risk_assessment(self, reference_id, assessment_id):
+        """Delete a risk assessment by its ID and reference ID"""
+        await self._ensure_session()
+        
+        url = get_auditing_api_url("delete_risk_assessment") + f"/{reference_id}/{assessment_id}"
+        
+        try:
+            async with self.session.delete(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 404:
+                    return None
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to delete risk assessment: {error_text}")
+                    
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+    
     async def get_assessments(self):
         """Get all risk assessments"""
         await self._ensure_session()
@@ -96,21 +146,25 @@ class AuditingAPIClient:
                     for item in raw:
                         if not isinstance(item, dict):
                             continue
+                        
+                        # Map API response to frontend expected format
+                        # API returns: id, title, auditor, assessment_date, risk_score, risk_level, created_at, updated_at
                         normalized.append({
-                            "id": item.get("id"),
-                            "title": item.get("title") or item.get("name"),
+                            "id": f"A-{item.get('id', 0):03d}",  # Format as A-001, A-002, etc.
+                            "reference_id": item.get("id"),      # Keep raw ID for API calls
+                            "title": item.get("title", "Untitled Assessment"),
                             "department_id": item.get("department_id"),
-                            "department": item.get("department"),
+                            "department": item.get("department") or "General",
                             "project_id": item.get("project_id"),
                             "project": item.get("project"),
                             "auditor_id": item.get("auditor_id"),
-                            "auditor": item.get("auditor"),
+                            "auditor": item.get("auditor", "Unknown"),
                             "assessment_date": item.get("assessment_date"),
-                            "risk_score": item.get("risk_score"),
-                            "risk_level": item.get("risk_level"),
-                            "scope": item.get("scope"),
-                            "findings": item.get("findings"),
-                            "recommendations": item.get("recommendations"),
+                            "risk_score": float(item.get("risk_score", 0)) if item.get("risk_score") is not None else 0.0,
+                            "risk_level": item.get("risk_level", "Low"),
+                            "scope": item.get("scope", ""),
+                            "findings": item.get("findings", ""),
+                            "recommendations": item.get("recommendations", ""),
                             "risk_factors": item.get("risk_factors") or [],
                             "created_at": item.get("created_at"),
                             "updated_at": item.get("updated_at"),
@@ -251,7 +305,37 @@ class AuditingAPIClient:
         try:
             async with self.session.get(url) as response:
                 if response.status == 200:
-                    return await response.json()
+                    raw = await response.json()
+                    if not isinstance(raw, list):
+                        return []
+                    
+                    # Map risk_level_id to risk_level string
+                    risk_level_mapping = {
+                        1: "High",
+                        2: "Medium", 
+                        3: "Low"
+                    }
+                    
+                    normalized = []
+                    for dept in raw:
+                        if not isinstance(dept, dict):
+                            continue
+                        
+                        risk_level_id = dept.get("riskLevelId") or dept.get("risk_level_id")
+                        risk_level = risk_level_mapping.get(risk_level_id, "Low")
+                        
+                        normalized.append({
+                            "id": dept.get("id"),
+                            "name": dept.get("name", "Unknown Department"),
+                            "head": dept.get("head", "Unknown"),
+                            "risk_level_id": risk_level_id,
+                            "risk_level": risk_level,
+                            "assessments": dept.get("assessments", 0),
+                            "created_at": dept.get("createdAt") or dept.get("created_at"),
+                            "updated_at": dept.get("updatedAt") or dept.get("updated_at"),
+                        })
+                    
+                    return normalized
                 else:
                     error_text = await response.text()
                     raise Exception(f"Failed to get departments: {error_text}")
@@ -268,7 +352,51 @@ class AuditingAPIClient:
         try:
             async with self.session.get(url) as response:
                 if response.status == 200:
-                    return await response.json()
+                    raw = await response.json()
+                    if not isinstance(raw, list):
+                        return []
+                    
+                    # Map status_id and risk_level_id to strings
+                    status_mapping = {
+                        1: "Planning",
+                        2: "Active", 
+                        3: "Completed",
+                        4: "On Hold",
+                        5: "Cancelled"
+                    }
+                    
+                    risk_level_mapping = {
+                        1: "High",
+                        2: "Medium", 
+                        3: "Low"
+                    }
+                    
+                    normalized = []
+                    for project in raw:
+                        if not isinstance(project, dict):
+                            continue
+                        
+                        status_id = project.get("statusId") or project.get("status_id")
+                        risk_level_id = project.get("riskLevelId") or project.get("risk_level_id")
+                        
+                        normalized.append({
+                            "id": project.get("id"),
+                            "name": project.get("name", "Unknown Project"),
+                            "description": project.get("description", ""),
+                            "status_id": status_id,
+                            "status": status_mapping.get(status_id, "Unknown"),
+                            "department_id": project.get("departmentId") or project.get("department_id"),
+                            "start_date": project.get("startDate") or project.get("start_date"),
+                            "end_date": project.get("endDate") or project.get("end_date"),
+                            "budget": project.get("budget", "0"),
+                            "risk_level_id": risk_level_id,
+                            "risk_level": risk_level_mapping.get(risk_level_id, "Low"),
+                            "manager": project.get("manager", "Unknown"),
+                            "created_at": project.get("createdAt") or project.get("created_at"),
+                            "updated_at": project.get("updatedAt") or project.get("updated_at"),
+                        })
+                    
+                    return normalized
                 else:
                     error_text = await response.text()
                     raise Exception(f"Failed to get projects: {error_text}")

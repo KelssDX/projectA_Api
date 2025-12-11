@@ -36,17 +36,17 @@ class ProjectsView(BaseView):
 
         header = ft.Container(
             height=40,
-            bgcolor=None,
+            bgcolor=colors.surface,
             border=ft.border.only(bottom=ft.BorderSide(1, colors.border)),
             padding=ft.padding.only(left=30, right=30),
             content=ft.Row([
-                ft.Container(width=240, content=ft.Text("Name", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=160, content=ft.Text("Status", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=220, content=ft.Text("Department", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=180, content=ft.Text("Manager", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=180, content=ft.Text("Timeline", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=200, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=colors.text_secondary, text_align=ft.TextAlign.CENTER)),
-            ])
+                ft.Container(expand=2, content=ft.Text("Name", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Status", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Department", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Manager", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1.5, content=ft.Text("Timeline", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1.5, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=colors.text_secondary, text_align=ft.TextAlign.CENTER)),
+            ], expand=True)
         )
 
         rows = ft.Column(spacing=0)
@@ -94,9 +94,9 @@ class ProjectsView(BaseView):
             border=ft.border.only(bottom=ft.BorderSide(1, colors.border)),
             padding=ft.padding.only(left=30, right=30),
             content=ft.Row([
-                ft.Container(width=240, content=ft.Text(proj.get("name", "-"), color=colors.text_primary)),
+                ft.Container(expand=2, content=ft.Text(proj.get("name", "-"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
                 ft.Container(
-                    width=160,
+                    expand=1,
                     content=ft.Container(
                         width=100,
                         height=30,
@@ -106,11 +106,11 @@ class ProjectsView(BaseView):
                         content=ft.Text(proj.get("status", "-"), color="white", size=12, weight=ft.FontWeight.BOLD)
                     )
                 ),
-                ft.Container(width=220, content=ft.Text(proj.get("department_name", "-"), color=colors.text_primary)),
-                ft.Container(width=180, content=ft.Text(proj.get("manager", "-"), color=colors.text_primary)),
-                ft.Container(width=180, content=ft.Text(timeline, color=colors.text_primary)),
+                ft.Container(expand=1, content=ft.Text(proj.get("department_name", "-"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(expand=1, content=ft.Text(proj.get("manager", "-"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(expand=1.5, content=ft.Text(timeline, color=colors.text_primary)),
                 ft.Container(
-                    width=200,
+                    expand=1.5,
                     content=ft.Row([
                         ft.Container(
                             width=40,
@@ -143,7 +143,7 @@ class ProjectsView(BaseView):
                         ),
                     ], alignment=ft.MainAxisAlignment.CENTER)
                 )
-            ])
+            ], expand=True)
         )
 
     def load_projects(self):
@@ -153,14 +153,14 @@ class ProjectsView(BaseView):
 
     async def _load_projects_async(self):
         """Load projects data from the API"""
-        print("🔧 DEBUG: _load_projects_async called")
+        print("DEBUG: _load_projects_async called")
         try:
-            print("🔧 DEBUG: Loading projects from src.api...")
+            print("DEBUG: Loading projects from src.api...")
             
             # Get projects data from API
-            print("🔧 DEBUG: Calling auditing_client.get_projects()")
+            print("DEBUG: Calling auditing_client.get_projects()")
             api_projects = await self.auditing_client.get_projects()
-            print(f"🔧 DEBUG: API returned {len(api_projects) if api_projects else 0} projects")
+            print(f"DEBUG: API returned {len(api_projects) if api_projects else 0} projects")
             
             if api_projects:
                 # Convert API data to dictionaries if needed
@@ -180,6 +180,7 @@ class ProjectsView(BaseView):
                             'end_date': proj_data.get('end_date') or proj_data.get('EndDate'),
                             'budget': proj_data.get('budget') or proj_data.get('Budget'),
                             'risk_level_id': proj_data.get('risk_level_id') or proj_data.get('RiskLevelId'),
+                            'risk_level': proj_data.get('risk_level') or proj_data.get('RiskLevel', 'Low'),
                             'manager': proj_data.get('manager') or proj_data.get('Manager')
                         }
                         self.projects.append(normalized)

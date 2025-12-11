@@ -1,5 +1,6 @@
 import flet as ft
 from flet import Icons
+import asyncio
 from src.utils.theme import (
     get_theme_colors,
     apply_theme_to_control,
@@ -10,6 +11,7 @@ from src.views.common.base_view import BaseView
 from src.models.assessment import Assessment
 from datetime import datetime
 from src.api.auditing_client import AuditingAPIClient
+from src.views.assessments.unified_form import UnifiedAssessmentForm
 
 
 class AssessmentListView(BaseView):
@@ -89,6 +91,7 @@ class AssessmentListView(BaseView):
         # Assessments table
         self.assessments_table_container = ft.Container(
             expand=True,
+            width=None,  # Allow width to be flexible
             content=None  # Will be set in refresh_table
         )
 
@@ -121,15 +124,15 @@ class AssessmentListView(BaseView):
 
     async def _load_assessments_data(self):
         """Load assessments data from the API"""
-        print("🔧 DEBUG: _load_assessments_data called")
+        print("DEBUG: _load_assessments_data called")
         try:
             # Show loading state
-            print("🔧 DEBUG: Loading assessments from src.api...")
+            print("DEBUG: Loading assessments from src.api...")
             
             # Get assessments data from API
-            print("🔧 DEBUG: Calling auditing_client.get_assessments()")
+            print("DEBUG: Calling auditing_client.get_assessments()")
             api_assessments = await self.auditing_client.get_assessments()
-            print(f"🔧 DEBUG: API returned: {api_assessments}")
+            print(f"DEBUG: API returned: {api_assessments}")
             
             if api_assessments:
                 # Convert API data to Assessment objects
@@ -199,23 +202,23 @@ class AssessmentListView(BaseView):
             filtered_assessments = [assessment for assessment in filtered_assessments
                                     if assessment.department == self.current_dept_filter]
 
-        # Create table header using surface color
+        # Create table header using surface color with responsive column widths
         header = ft.Container(
             height=44,
             bgcolor=table_colors.surface,
             border=ft.border.only(bottom=ft.BorderSide(1, table_colors.border)),
             padding=ft.padding.only(left=24, right=24),
             content=ft.Row([
-                ft.Container(width=120, content=ft.Text("ID", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=True, content=ft.Text("Title", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(width=180, content=ft.Text("Department", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(width=140, content=ft.Text("Project", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(width=120, content=ft.Text("Date", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(width=120, content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(width=100, content=ft.Text("Score", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(width=200, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary,
+                ft.Container(expand=1, content=ft.Text("ID", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=2, content=ft.Text("Title", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=1.5, content=ft.Text("Department", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=1.5, content=ft.Text("Project", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Date", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=0.8, content=ft.Text("Score", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(expand=2, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary,
                                                         text_align=ft.TextAlign.CENTER))
-            ])
+            ], expand=True)
         )
 
         # Create assessment rows
@@ -247,8 +250,18 @@ class AssessmentListView(BaseView):
             rows_column
         ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
 
+        # Wrap table in a responsive container
+        responsive_table = ft.Container(
+            content=table,
+            expand=True,
+            width=None,  # Allow width to be flexible
+            bgcolor=table_colors.surface,
+            border_radius=12,
+            border=ft.border.all(1, table_colors.border)
+        )
+
         # Update the table container
-        self.assessments_table_container.content = table
+        self.assessments_table_container.content = responsive_table
         if hasattr(self, 'page') and self.page:
             self.page.update()
 
@@ -329,15 +342,15 @@ class AssessmentListView(BaseView):
             border=ft.border.only(bottom=ft.BorderSide(1, row_colors.border)),
             padding=ft.padding.only(left=30, right=30),
             content=ft.Row([
-                ft.Container(width=120, content=ft.Text(assessment.id, color=row_colors.text_primary)),
-                ft.Container(width=250, content=ft.Text(assessment.title, color=row_colors.text_primary)),
-                ft.Container(width=150,
-                             content=ft.Text(assessment.department if assessment.department else "-", color=row_colors.text_primary)),
-                ft.Container(width=140,
-                             content=ft.Text(assessment.project if assessment.project else "-", color=row_colors.text_primary)),
-                ft.Container(width=120, content=ft.Text(assessment_date, color=row_colors.text_primary)),
+                ft.Container(expand=1, content=ft.Text(assessment.id, color=row_colors.text_primary)),
+                ft.Container(expand=2, content=ft.Text(assessment.title, color=row_colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(expand=1.5,
+                             content=ft.Text(assessment.department if assessment.department else "-", color=row_colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(expand=1.5,
+                             content=ft.Text(assessment.project if assessment.project else "-", color=row_colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(expand=1, content=ft.Text(assessment_date, color=row_colors.text_primary)),
                 ft.Container(
-                    width=120,
+                    expand=1,
                     content=ft.Container(
                         width=80,
                         height=30,
@@ -348,24 +361,43 @@ class AssessmentListView(BaseView):
                     )
                 ),
                 ft.Container(
-                    width=100,
+                    expand=0.8,
                     content=ft.Text(
                         f"{assessment.risk_score:.1f}" if assessment.risk_score is not None else "-",
                         color=row_colors.text_primary,
                     ),
                 ),
                 ft.Container(
-                    width=200,
+                    expand=2,
                     content=ft.Row([
-                        ft.ElevatedButton(text="View", on_click=lambda e, id=assessment.id: self.view_assessment(id)),
+                        ft.ElevatedButton(
+                            text="View", 
+                            on_click=lambda e, aid=assessment.id: self.view_assessment(aid)
+                        ),
                         ft.Container(width=10),
-                        ft.ElevatedButton(text="Edit", on_click=lambda e, id=assessment.id: self.edit_assessment(id)),
+                        ft.ElevatedButton(
+                            text="Edit", 
+                            on_click=lambda e, aid=assessment.id: self._safe_edit_click(e, aid)
+                        ),
                         ft.Container(width=10),
-                        ft.ElevatedButton(text="Delete", on_click=lambda e, id=assessment.id: self.delete_assessment(id)),
+                        ft.ElevatedButton(
+                            text="Delete", 
+                            on_click=lambda e, aid=assessment.id: self.delete_assessment(aid)
+                        )
                     ], alignment=ft.MainAxisAlignment.CENTER)
                 )
-            ])
+            ], expand=True)
         )
+
+    def _safe_edit_click(self, e, assessment_id):
+        """Wrapper to debug edit click"""
+        print(f"DEBUG: Edit button clicked for {assessment_id}")
+        try:
+            self.edit_assessment(assessment_id)
+        except Exception as ex:
+            print(f"CRITICAL ERROR in edit click: {ex}")
+            import traceback
+            traceback.print_exc()
 
     def show_risk_filter(self, e):
         """Show risk level filter dropdown"""
@@ -464,7 +496,6 @@ class AssessmentListView(BaseView):
             print(f"Created new assessment with ID: {new_id}")
 
             # Create the unified form view
-            from src.views.assessments.unified_form import UnifiedAssessmentForm
             form_view = UnifiedAssessmentForm(
                 self.page,
                 self.user,
@@ -498,42 +529,46 @@ class AssessmentListView(BaseView):
             self.page.update()
 
     def edit_assessment(self, assessment_id):
-        """Edit an assessment"""
-        print(f"🔧 DEBUG: edit_assessment called with ID: {assessment_id}")
-        print(f"🔧 DEBUG: Total assessments available: {len(self.assessments)}")
+        """Edit an assessment - triggers async fetch"""
+        print(f"DEBUG: edit_assessment called with ID: {assessment_id}")
+        self.page.run_task(self._edit_assessment_async, assessment_id)
 
-        # Find the assessment in our list
-        assessment = next((a for a in self.assessments if a.id == assessment_id), None)
-        if not assessment:
-            self.show_error_dialog(f"Assessment {assessment_id} not found")
+    async def _edit_assessment_async(self, assessment_id):
+        """Async method to fetch fresh data and open edit form"""
+        print(f"DEBUG: _edit_assessment_async starting for {assessment_id}")
+        
+        # Find the assessment in our local list to get the reference ID
+        local_assessment = next((a for a in self.assessments if a.id == assessment_id), None)
+        if not local_assessment:
+            self.show_error_dialog(f"Assessment {assessment_id} not found locally")
             return
 
         # Close any open dialog
-        if hasattr(self.page, 'dialog') and self.page.dialog and self.page.dialog.open:  # Safe check
+        if hasattr(self.page, 'dialog') and self.page.dialog and self.page.dialog.open:
             self.page.dialog.open = False
             self.page.update()
 
         try:
-            # Import here to avoid circular imports
-            from src.views.assessments.form import AssessmentFormView
+            # Reference ID is needed for API
+            reference_id = getattr(local_assessment, 'reference_id', None) or getattr(local_assessment, 'id', None)
+            
+            # FETCH FRESH DATA FROM API
+            print(f"DEBUG: Fetching fresh data for reference_id: {reference_id}")
+            fresh_data = await self.auditing_client.get_risk_assessment(reference_id)
+            
+            if not fresh_data:
+                 print("WARNING: API returned no data, falling back to local object")
+                 fresh_data = local_assessment
+            else:
+                 print("DEBUG: Fresh data fetched successfully")
 
-            # Display a snackbar to indicate loading
-            self.page.snack_bar = ft.SnackBar(content=ft.Text("Loading assessment form..."))
-            self.page.snack_bar.open = True
-            self.page.update()
-
-            # Reference to the application's layout to return to later
-            app_layout = None
-            if hasattr(self.page, "_controls") and self.page._controls:
-                app_layout = self.page._controls[0]
-
-            # Create the form with proper callbacks
-            from src.views.assessments.unified_form import UnifiedAssessmentForm
+            # Create the form with FRESH data
             form_view = UnifiedAssessmentForm(
                 self.page,
                 self.user,
                 mode="edit",
-                assessment=assessment,
+                reference_id=reference_id,
+                assessment=fresh_data, # Pass fresh dict or object
                 on_save=self.on_assessment_saved,
                 on_cancel=self.on_form_cancel
             )
@@ -548,13 +583,19 @@ class AssessmentListView(BaseView):
             error_details = traceback.format_exc()
             print(f"Error creating assessment form: {str(e)}")
             print(f"Traceback: {error_details}")
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error: {str(e)}"))
-            self.page.snack_bar.open = True
-            self.page.update()
+            self.show_error_dialog(f"Error opening form: {str(e)}")
 
     def on_assessment_saved(self, assessment):
-        """Handle saved assessment"""
-        print(f"Assessment saved: {assessment.id}")  # Debug print
+        """Handle saved assessment - accepts dict or Assessment object"""
+        # Handle dict result from API
+        if isinstance(assessment, dict):
+            assessment_id = assessment.get('id') or assessment.get('referenceId')
+            print(f"Assessment saved: {assessment_id} (dict result)")
+            # Refresh the list to show updated data
+            self.refresh_table()
+            return
+        
+        print(f"Assessment saved: {assessment.id}")
 
         # Find if assessment already exists
         existing_idx = next((i for i, a in enumerate(self.assessments) if a.id == assessment.id), None)
@@ -568,7 +609,7 @@ class AssessmentListView(BaseView):
 
         try:
             # Reference to the application's layout to return to
-            from src.views.assessment.list import AssessmentListView
+            from src.views.assessments.list import AssessmentListView
 
             # Try to find the main app's layout
             app_layout = None
@@ -638,80 +679,287 @@ class AssessmentListView(BaseView):
 
     def view_assessment(self, assessment_id):
         """View assessment details"""
-        print(f"🔧 DEBUG: view_assessment called with ID: {assessment_id}")
-        print(f"🔧 DEBUG: Total assessments available: {len(self.assessments)}")
+        print(f"DEBUG: view_assessment called with ID: {assessment_id}")
+        print(f"DEBUG: Total assessments available: {len(self.assessments)}")
         
-        # Find the assessment in our list
+        # Find the assessment in our list to get the reference_id
         assessment = next((a for a in self.assessments if a.id == assessment_id), None)
         if not assessment:
-            print(f"❌ DEBUG: Assessment {assessment_id} not found in list")
+            print(f"ERROR: Assessment {assessment_id} not found in list")
             self.show_error_dialog(f"Assessment {assessment_id} not found")
             return
         
-        print(f"✅ DEBUG: Found assessment: {assessment.title}")
-
-        # Format assessment date
-        assessment_date = assessment.assessment_date
-        if hasattr(assessment_date, "strftime"):
-            assessment_date = assessment_date.strftime("%Y-%m-%d")
+        print(f"DEBUG: Found assessment: {assessment.title}")
+        
+        # Extract reference_id from the assessment
+        reference_id = getattr(assessment, 'reference_id', None)
+        if not reference_id:
+            # Try to get it from the assessment data
+            if hasattr(assessment, 'id') and isinstance(assessment.id, str) and assessment.id.startswith('A-'):
+                # Extract numeric ID from A-001 format
+                try:
+                    reference_id = int(assessment.id[2:])
+                except ValueError:
+                    reference_id = None
+        
+        if not reference_id:
+            print(f"ERROR: No reference_id found for assessment {assessment_id}")
+            self.show_error_dialog(f"Unable to load assessment details: No reference ID found")
+            return
+        
+        print(f"DEBUG: Using reference_id: {reference_id} to call API")
+        
+        # Call the API to get full assessment details
+        if hasattr(self.page, "run_task"):
+            self.page.run_task(self._load_assessment_details_async, reference_id, assessment_id)
         else:
-            assessment_date = "N/A"
-
-        # Set risk level color
-        risk_color = "#95a5a6"  # Default gray
-        if assessment.risk_level == "High":
-            risk_color = "#e74c3c"  # Red
-        elif assessment.risk_level == "Medium":
-            risk_color = "#f39c12"  # Orange
-        elif assessment.risk_level == "Low":
-            risk_color = "#2ecc71"  # Green
-
-        # Create risk factors display
-        risk_factors_column = ft.Column(spacing=10)
-        for factor in assessment.risk_factors:
-            if isinstance(factor, dict) and "name" in factor and "value" in factor:
-                risk_factors_column.controls.append(
-                    ft.Row([
-                        ft.Text(factor["name"], weight=ft.FontWeight.BOLD),
-                        ft.Container(expand=True),
-                        ft.Text(
-                            f"{factor['value']:.1f}" if isinstance(factor["value"], (int, float)) else factor["value"])
-                    ])
-                )
-
-        # Navigate to a full details view instead of a simple dialog
-        try:
-            from src.views.assessments.details import AssessmentDetailsView
-            def go_back():
-                # Return to list view
-                if hasattr(self.page, 'APP_INSTANCE') and self.page.APP_INSTANCE:
-                    self.page.APP_INSTANCE.show_view("assessments")
-                else:
-                    self.page.clean()
-                    self.page.add(self)
-                    self.page.update()
-
-            # Use unified form in view (read-only) mode
-            from src.views.assessments.unified_form import UnifiedAssessmentForm
-            view_form = UnifiedAssessmentForm(self.page, self.user, mode="view", assessment=assessment, on_cancel=go_back)
-            app = self.page.APP_INSTANCE
-            app.content_area.content = view_form
-            self.page.update()
-        except Exception as ex:
-            # Fallback: show error text in content area without dialogs
+            # Fallback for environments without run_task
+            import asyncio
             try:
-                app = getattr(self.page, 'APP_INSTANCE', None)
-                if app and hasattr(app, 'content_area'):
-                    app.content_area.content = ft.Container(padding=20, content=ft.Text(f"Unable to load details: {ex}"))
-                    self.page.update()
-                elif self.page is not None:
-                    self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Unable to load details: {ex}"))
-                    self.page.snack_bar.open = True
-                    self.page.update()
+                loop = asyncio.get_event_loop()
+                loop.create_task(self._load_assessment_details_async(reference_id, assessment_id))
+            except RuntimeError:
+                # If no event loop, create a new one
+                asyncio.run(self._load_assessment_details_async(reference_id, assessment_id))
+
+    async def _load_assessment_details_async(self, reference_id, assessment_id):
+        """Load assessment details from API asynchronously"""
+        try:
+            print(f"DEBUG: Starting _load_assessment_details_async with reference_id: {reference_id}, assessment_id: {assessment_id}")
+            
+            from src.controllers.assessment_controller import AssessmentController
+            controller = AssessmentController()
+            
+            print(f"DEBUG: Calling API get_risk_assessment with reference_id: {reference_id}")
+            assessment_data = await controller.get_risk_assessment(reference_id)
+            
+            print(f"DEBUG: API call completed, result: {assessment_data is not None}")
+            
+            if not assessment_data:
+                print(f"ERROR: API returned no data for reference_id: {reference_id}")
+                self.show_error_dialog(f"Assessment details not found")
+                return
+            
+            print(f"DEBUG: API returned assessment data: {type(assessment_data)}")
+            if isinstance(assessment_data, dict):
+                print(f"DEBUG: API response keys: {list(assessment_data.keys())}")
+                print(f"DEBUG: API response sample: {assessment_data}")
+            
+            # Navigate to a full details view
+            try:
+                print("DEBUG: Creating go_back callback")
+                # Store references to avoid context issues
+                page_ref = self.page
+                app_instance = getattr(self.page, 'APP_INSTANCE', None) if self.page else None
+                
+                def go_back(e=None):
+                    print("=" * 50)
+                    print("DEBUG: go_back callback called!")
+                    print(f"DEBUG: Event object: {e}")
+                    print(f"DEBUG: page_ref: {page_ref}")
+                    print(f"DEBUG: app_instance: {app_instance}")
+                    print("=" * 50)
+                    
+                    try:
+                        # Return to assessments list view using the main app navigation
+                        if app_instance:
+                            print("DEBUG: Using APP_INSTANCE to navigate back to assessments")
+                            # Force recreation of assessments view to ensure fresh data
+                            if "assessments" in app_instance.views:
+                                del app_instance.views["assessments"]
+                            app_instance.show_view("assessments")
+                            print("DEBUG: Navigation completed")
+                        else:
+                            print("ERROR: APP_INSTANCE not available")
+                    except Exception as ex:
+                        print(f"ERROR: Exception in go_back callback: {ex}")
+                        import traceback
+                        traceback.print_exc()
+
+                print("DEBUG: Creating simple assessment view instead of UnifiedAssessmentForm")
+                # Create a simple view instead of using UnifiedAssessmentForm with DataTable
+                view_form = self._create_simple_assessment_view(assessment_data, go_back)
+                
+                print("DEBUG: Setting content area")
+                app = self.page.APP_INSTANCE
+                app.content_area.content = view_form
+                
+                print("DEBUG: Updating page")
+                self.page.update()
+                print("DEBUG: View assessment setup completed successfully")
+                
+            except Exception as ex:
+                print(f"ERROR: Error creating view form: {ex}")
+                import traceback
+                traceback.print_exc()
+                # Fallback: show error text in content area without dialogs
+                try:
+                    app = getattr(self.page, 'APP_INSTANCE', None)
+                    if app and hasattr(app, 'content_area'):
+                        app.content_area.content = ft.Container(padding=20, content=ft.Text(f"Unable to load details: {ex}"))
+                        self.page.update()
+                    elif self.page is not None:
+                        self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Unable to load details: {ex}"))
+                        self.page.snack_bar.open = True
+                        self.page.update()
+                    else:
+                        print(f"Unable to load details: {ex}")
+                except Exception as inner:
+                    print(f"Failed to render error: {inner}")
+                    
+        except Exception as ex:
+            print(f"ERROR: Error calling API: {ex}")
+            import traceback
+            traceback.print_exc()
+            self.show_error_dialog(f"Error loading assessment details: {str(ex)}")
+
+    def _create_simple_assessment_view(self, assessment_data, go_back_callback):
+        """Create a simple assessment view without DataTable"""
+        from src.utils.theme import get_theme_colors, create_modern_card, create_modern_button
+        from flet import Icons
+        
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        
+        # Create header with back button - using a simpler approach
+        def handle_back_click(e):
+            print("=" * 50)
+            print("DEBUG: handle_back_click called directly!")
+            print(f"DEBUG: Event: {e}")
+            print("=" * 50)
+            go_back_callback(e)
+        
+        back_button = ft.ElevatedButton(
+            "Back to List",
+            icon=Icons.ARROW_BACK,
+            on_click=handle_back_click,
+            bgcolor=colors.primary,
+            color="white"
+        )
+        
+        header = ft.Row([
+            back_button,
+            ft.Container(expand=True),
+            ft.Text("Assessment Details", size=24, weight=ft.FontWeight.BOLD, color=colors.text_primary)
+        ])
+        
+        # Assessment overview card
+        overview_content = ft.Column([
+            ft.Text("Assessment Overview", size=18, weight=ft.FontWeight.BOLD, color=colors.text_primary),
+            ft.Divider(color=colors.border),
+            ft.Row([
+                ft.Container(expand=1, content=ft.Column([
+                    ft.Text("Client:", weight=ft.FontWeight.BOLD, color=colors.text_secondary),
+                    ft.Text(assessment_data.get("client", "N/A"), color=colors.text_primary)
+                ])),
+                ft.Container(expand=1, content=ft.Column([
+                    ft.Text("Assessor:", weight=ft.FontWeight.BOLD, color=colors.text_secondary),
+                    ft.Text(assessment_data.get("assessor", "N/A"), color=colors.text_primary)
+                ])),
+                ft.Container(expand=1, content=ft.Column([
+                    ft.Text("Approved By:", weight=ft.FontWeight.BOLD, color=colors.text_secondary),
+                    ft.Text(assessment_data.get("approvedBy", "N/A"), color=colors.text_primary)
+                ]))
+            ]),
+            ft.Row([
+                ft.Container(expand=1, content=ft.Column([
+                    ft.Text("Start Date:", weight=ft.FontWeight.BOLD, color=colors.text_secondary),
+                    ft.Text(assessment_data.get("assessmentStartDate", "N/A"), color=colors.text_primary)
+                ])),
+                ft.Container(expand=1, content=ft.Column([
+                    ft.Text("End Date:", weight=ft.FontWeight.BOLD, color=colors.text_secondary),
+                    ft.Text(assessment_data.get("assessmentEndDate", "N/A"), color=colors.text_primary)
+                ])),
+                ft.Container(expand=1, content=ft.Column([
+                    ft.Text("Reference ID:", weight=ft.FontWeight.BOLD, color=colors.text_secondary),
+                    ft.Text(str(assessment_data.get("referenceId", "N/A")), color=colors.text_primary)
+                ]))
+            ])
+        ], spacing=16)
+        
+        overview_card = create_modern_card(colors, overview_content)
+        
+        # Risk assessments table (using simple layout instead of DataTable)
+        risk_assessments = assessment_data.get("riskAssessments", [])
+        
+        if risk_assessments:
+            # Create table header
+            table_header = ft.Container(
+                height=40,
+                bgcolor=colors.surface,
+                border=ft.border.only(bottom=ft.BorderSide(1, colors.border)),
+                padding=ft.padding.only(left=24, right=24),
+                content=ft.Row([
+                    ft.Container(expand=2, content=ft.Text("Business Objective", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                    ft.Container(expand=2, content=ft.Text("Main Process", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                    ft.Container(expand=1, content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                    ft.Container(expand=2, content=ft.Text("Key Risk", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                    ft.Container(expand=1, content=ft.Text("Likelihood", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                    ft.Container(expand=1, content=ft.Text("Impact", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ], expand=True)
+            )
+            
+            # Create table rows
+            table_rows = []
+            for risk in risk_assessments:
+                risk_color = "#95a5a6"  # Default gray
+                likelihood = risk.get("risksAssessment_RiskLikelihood", "")
+                impact = risk.get("risksAssessment_RiskImpact", "")
+                
+                # Simple risk level determination
+                if likelihood in ["Likely", "Almost Certain"] and impact in ["Major", "Catastrophic"]:
+                    risk_color = "#e74c3c"  # High - Red
+                elif likelihood in ["Possible", "Likely"] or impact in ["Moderate", "Major"]:
+                    risk_color = "#f39c12"  # Medium - Orange
                 else:
-                    print(f"Unable to load details: {ex}")
-            except Exception as inner:
-                print(f"Failed to render error: {inner}")
+                    risk_color = "#2ecc71"  # Low - Green
+                
+                row = ft.Container(
+                    height=60,
+                    bgcolor=colors.surface,
+                    border=ft.border.only(bottom=ft.BorderSide(1, colors.border)),
+                    padding=ft.padding.only(left=24, right=24),
+                    content=ft.Row([
+                        ft.Container(expand=2, content=ft.Text(risk.get("processObjectivesAssessment_BusinessObjectives", "N/A"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                        ft.Container(expand=2, content=ft.Text(risk.get("processObjectivesAssessment_MainProcess", "N/A"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                        ft.Container(expand=1, content=ft.Text("Medium", color=risk_color, weight=ft.FontWeight.BOLD)),
+                        ft.Container(expand=2, content=ft.Text(risk.get("risksAssessment_KeyRiskAndFactors", "N/A"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                        ft.Container(expand=1, content=ft.Text(likelihood, color=colors.text_primary)),
+                        ft.Container(expand=1, content=ft.Text(impact, color=colors.text_primary)),
+                    ], expand=True)
+                )
+                table_rows.append(row)
+            
+            table_content = ft.Column([table_header] + table_rows, spacing=0)
+            table_card = create_modern_card(colors, ft.Column([
+                ft.Text("Risk Assessments", size=18, weight=ft.FontWeight.BOLD, color=colors.text_primary),
+                ft.Divider(color=colors.border),
+                table_content
+            ], spacing=16))
+        else:
+            table_card = create_modern_card(colors, ft.Column([
+                ft.Text("Risk Assessments", size=18, weight=ft.FontWeight.BOLD, color=colors.text_primary),
+                ft.Divider(color=colors.border),
+                ft.Container(
+                    height=100,
+                    alignment=ft.alignment.center,
+                    content=ft.Text("No risk assessments found", color=colors.text_secondary)
+                )
+            ], spacing=16))
+        
+        # Create main content
+        main_content = ft.Column([
+            header,
+            ft.Divider(color=colors.border, height=20),
+            overview_card,
+            ft.Container(height=16),
+            table_card
+        ], spacing=16, scroll=ft.ScrollMode.AUTO)
+        
+        return ft.Container(
+            content=main_content,
+            padding=20,
+            expand=True
+        )
 
     def edit_assessment_from_dialog(self, assessment_id):
         """Edit assessment from the view dialog"""
@@ -722,13 +970,13 @@ class AssessmentListView(BaseView):
 
     def delete_assessment(self, assessment_id):
         """Delete an assessment"""
-        print(f"🔧 DEBUG: delete_assessment called with ID: {assessment_id}")
-        print(f"🔧 DEBUG: Total assessments available: {len(self.assessments)}")
+        print(f"DEBUG: delete_assessment called with ID: {assessment_id}")
+        print(f"DEBUG: Total assessments available: {len(self.assessments)}")
         
         # Find the assessment in our list
         assessment = next((a for a in self.assessments if a.id == assessment_id), None)
         if not assessment:
-            print(f"❌ DEBUG: Assessment {assessment_id} not found for deletion")
+            print(f"ERROR: Assessment {assessment_id} not found for deletion")
             self.show_error_dialog(f"Assessment {assessment_id} not found")
             return
 

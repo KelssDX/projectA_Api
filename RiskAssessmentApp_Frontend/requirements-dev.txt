@@ -1,0 +1,2 @@
+# Development dependencies for auto-reload
+watchdog>=3.0.0

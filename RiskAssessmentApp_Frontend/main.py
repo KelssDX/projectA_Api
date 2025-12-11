@@ -27,6 +27,10 @@ class RiskAssessmentApp:
         self.current_reference_id = None
         self.pending_assessment_filter = None
         self.auditing_client = None
+        # Initialize UI components state
+        self.sidebar = None
+        self.layout = None
+        self.content_area = None
 
     async def main(self, page: ft.Page):
         # Set up the page
@@ -35,6 +39,13 @@ class RiskAssessmentApp:
         page.window_width = 1200
         page.window_height = 800
         page.padding = 0
+        
+        # Clear Flet's internal session to prevent state conflicts
+        try:
+            page.session.clear()
+        except:
+            pass
+        
         print("Page configured")
 
         page.APP_INSTANCE = self
@@ -56,6 +67,10 @@ class RiskAssessmentApp:
         def nav_change(index):
             print(f"Navigation change to index: {index}")
             try:
+                # DEBUG: Check sidebar state BEFORE navigation
+                if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
+                    print(f"DEBUG [BEFORE NAV]: Sidebar.content has {len(self.sidebar.content.controls)} controls")
+                
                 self.current_nav_index = index
                 view_map = {
                     0: "dashboard",
@@ -69,6 +84,10 @@ class RiskAssessmentApp:
                 view_name = view_map.get(index, "dashboard")
                 self.show_view(view_name)
                 self.update_sidebar_selection()
+                
+                # DEBUG: Check sidebar state AFTER navigation
+                if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
+                    print(f"DEBUG [AFTER NAV]: Sidebar.content has {len(self.sidebar.content.controls)} controls")
             except Exception as e:
                 print(f"Error in nav_change: {e}")
 
@@ -87,20 +106,51 @@ class RiskAssessmentApp:
                 elif subview == "details":
                     # Handle details navigation explicitly
                     try:
-                        from src.views.assessments.details import AssessmentDetailsView
+                        from src.views.assessments.modern_details import ModernAssessmentDetails
                         assessment_id = None
+                        reference_id = None
                         if isinstance(params, dict):
                             assessment_id = params.get("id") or params.get("assessment_id")
+                            reference_id = params.get("reference_id") or assessment_id
 
                         def go_back():
                             # Return to list view
                             self.show_view("assessments")
 
-                        details_view = AssessmentDetailsView(
+                        def edit_assessment(ref_id):
+                            # Navigate to edit mode
+                            try:
+                                from src.views.assessments.unified_form import UnifiedAssessmentForm
+                                from src.controllers.assessment_controller import AssessmentController
+                                
+                                async def load_and_edit():
+                                    controller = AssessmentController()
+                                    assessment_data = await controller.get_risk_assessment(ref_id)
+                                    
+                                    edit_form = UnifiedAssessmentForm(
+                                        self.page, 
+                                        self.current_user, 
+                                        mode="edit", 
+                                        reference_id=ref_id,
+                                        assessment=assessment_data, 
+                                        on_cancel=go_back
+                                    )
+                                    self.content_area.content = edit_form
+                                    self.page.update()
+                                
+                                import asyncio
+                                self.page.run_task(load_and_edit)
+                                
+                            except Exception as e:
+                                print(f"Error loading edit form: {e}")
+
+                        details_view = ModernAssessmentDetails(
                             self.page,
                             self.current_user,
                             assessment_id=assessment_id,
+                            reference_id=reference_id,
                             on_back=go_back,
+                            on_edit=edit_assessment
                         )
                         # Swap page content to details
                         if hasattr(self.page, 'controls'):
@@ -111,7 +161,8 @@ class RiskAssessmentApp:
                             self.content_area.content = details_view
                         self.page.update()
                         return
-                    except Exception as _:
+                    except Exception as e:
+                        print(f"Error loading details view: {e}")
                         # Fallback to default view switcher
                         self.show_view(view_name)
                 else:
@@ -122,247 +173,11 @@ class RiskAssessmentApp:
 
         self.on_navigate = on_navigate
 
-        # Menu items with proper structure
-        menu_items = [
-            {"text": "Dashboard", "index": 0},
-            {"text": "Assessments", "index": 1},
-            {"text": "Risk Heatmap", "index": 2},
-            {"text": "Departments", "index": 3},
-            {"text": "Projects", "index": 4},
-            {"text": "Users", "index": 5},
-            {"text": "Settings", "index": 6},
-        ]
-
-        # Create modern menu item containers with professional auditing icons
-        menu_containers = []
-        menu_icons = [
-            Icons.DASHBOARD_OUTLINED,     # Dashboard - Clean dashboard outline
-            Icons.FACT_CHECK,             # Assessments - Professional fact check/audit icon
-            Icons.GRID_ON,                # Risk Heatmap - Clean grid for matrix view
-            Icons.DOMAIN,                 # Departments - Corporate building/domain
-            Icons.WORK_OUTLINE,           # Projects - Professional work briefcase outline
-            Icons.ADMIN_PANEL_SETTINGS,   # Users - Admin panel for user management
-            Icons.SETTINGS_OUTLINED       # Settings - Clean settings outline
-        ]
+        # Don't create sidebar yet - will be created in on_login()
+        self.sidebar = None
+        self.menu_containers = []
+        self.layout = None
         
-        for i, item in enumerate(menu_items):
-            index = item["index"]
-            is_active = (index == self.current_nav_index)
-            
-            active_label_color = colors.button_text if is_active else colors.sidebar_text
-            active_icon_color = colors.button_text if is_active else colors.sidebar_text
-            menu_item = ft.Container(
-                content=ft.Row([
-                    ft.Container(
-                        content=ft.Icon(menu_icons[i], color=active_icon_color, size=20),
-                        width=40,
-                        alignment=ft.alignment.center
-                    ),
-                    ft.Text(
-                        item["text"], 
-                        color=active_label_color,
-                        weight=ft.FontWeight.BOLD if is_active else ft.FontWeight.NORMAL,
-                        size=14
-                    )
-                ], spacing=12),
-                padding=ft.padding.symmetric(horizontal=16, vertical=12),
-                bgcolor=colors.sidebar_item_active if is_active else None,
-                border_radius=12,
-                margin=ft.margin.symmetric(horizontal=8, vertical=2),
-                    on_click=lambda e, idx=index: nav_change(idx),
-                data=index,
-                animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
-                ink=True
-            )
-            menu_containers.append(menu_item)
-
-        # Modern user profile section - derive real initials, name and role; remove yellow
-        initials = "A"
-        full_name = "User"
-        role_text = ""
-        if isinstance(self.current_user, dict):
-            full_name = self.current_user.get("name") or self.current_user.get("username") or "User"
-            initials = (self.current_user.get("username") or full_name or "A")[:1].upper()
-            role_text = (self.current_user.get("role") or "").title()
-        else:
-            full_name = getattr(self.current_user, "name", None) or getattr(self.current_user, "username", "User")
-            initials = (getattr(self.current_user, "username", None) or full_name or "A")[:1].upper()
-            role_text = (getattr(self.current_user, "role", "") or "").title()
-
-        # elements reused for runtime updates
-        self.user_initials_text = ft.Text(initials, color=colors.button_text, size=16, weight=ft.FontWeight.BOLD)
-        self.user_name_text = ft.Text(
-            full_name,
-            size=14,
-            weight=ft.FontWeight.BOLD,
-            color=ft.Colors.WHITE,
-            max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS,
-            tooltip=full_name
-        )
-        self.user_role_text = ft.Text(
-            role_text or "",
-            size=12,
-            color=ft.Colors.WHITE70,
-            max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS,
-            tooltip=role_text or ""
-        )
-
-        user_profile = ft.Container(
-            padding=ft.padding.all(16),
-            content=ft.Container(
-                padding=ft.padding.all(12),
-                # Apple-like darker purple gradient background for the badge
-                gradient=ft.LinearGradient(
-                    begin=ft.alignment.top_left,
-                    end=ft.alignment.bottom_right,
-                    colors=["#2E1065", "#4C1D95", "#6D28D9"]
-                ),
-                border_radius=16,
-                border=ft.border.all(1, ft.Colors.with_opacity(0.3, ft.Colors.WHITE)),
-                content=ft.Row([
-                    ft.Container(
-                        width=40,
-                        height=40,
-                        # Avatar circle uses the same (darker) gradient as panel for coherence
-                        gradient=ft.LinearGradient(
-                            begin=ft.alignment.top_left,
-                            end=ft.alignment.bottom_right,
-                            colors=["#2E1065", "#4C1D95", "#6D28D9"]
-                        ),
-                        border_radius=20,
-                        alignment=ft.alignment.center,
-                        content=self.user_initials_text,
-                        border=ft.border.all(1, ft.Colors.with_opacity(0.35, ft.Colors.WHITE)),
-                        shadow=ft.BoxShadow(
-                            spread_radius=0,
-                            blur_radius=8,
-                            color=colors.shadow,
-                            offset=ft.Offset(0, 2)
-                        )
-                    ),
-                    ft.Column([
-                        self.user_name_text,
-                        self.user_role_text
-                    ], spacing=2, expand=True)
-                ], spacing=12)
-            )
-        )
-
-        # Modern toggle sidebar function
-        def toggle_sidebar(_=None):
-            self.sidebar_collapsed = not self.sidebar_collapsed
-            new_width = self.sidebar_collapsed_width if self.sidebar_collapsed else self.sidebar_expanded_width
-            self.sidebar.width = new_width
-            
-            # Update menu items for collapsed/expanded state
-            for i, menu_item in enumerate(menu_containers):
-                is_active = menu_item.data == self.current_nav_index
-                if self.sidebar_collapsed:
-                    # Show only icon when collapsed
-                    menu_item.content = ft.Container(
-                        content=ft.Icon(menu_icons[i], color=colors.primary if is_active else colors.sidebar_text, size=20),
-                        alignment=ft.alignment.center,
-                        tooltip=menu_items[i]["text"]
-                    )
-                    menu_item.margin = ft.margin.symmetric(horizontal=4, vertical=2)
-                else:
-                    # Show icon and text when expanded
-                    label_color = colors.button_text if is_active else colors.sidebar_text
-                    icon_color = colors.button_text if is_active else colors.sidebar_text
-                    menu_item.content = ft.Row([
-            ft.Container(
-                            content=ft.Icon(menu_icons[i], color=icon_color, size=20),
-                            width=40,
-                            alignment=ft.alignment.center
-                        ),
-                        ft.Text(
-                            menu_items[i]["text"], 
-                            color=label_color,
-                            weight=ft.FontWeight.BOLD if is_active else ft.FontWeight.NORMAL,
-                            size=14
-                        )
-                    ], spacing=12)
-                    # Apply gradient to active item
-                    try:
-                        from src.utils.theme import build_gradient
-                        if is_active:
-                            menu_item.gradient = build_gradient(colors.sidebar_item_active)
-                            menu_item.bgcolor = None
-                        else:
-                            menu_item.gradient = None
-                            menu_item.bgcolor = None
-                    except Exception:
-                        pass
-                    menu_item.margin = ft.margin.symmetric(horizontal=8, vertical=2)
-            
-            # Always keep icons + labels visible on selection
-            for i, menu_item in enumerate(menu_containers):
-                is_active = menu_item.data == self.current_nav_index
-                if hasattr(menu_item, 'content') and isinstance(menu_item.content, ft.Row) and len(menu_item.content.controls) >= 2:
-                    # Icon
-                    if hasattr(menu_item.content.controls[0], 'content') and isinstance(menu_item.content.controls[0].content, ft.Icon):
-                        menu_item.content.controls[0].content.color = colors.button_text if is_active else colors.sidebar_text
-                    # Label
-                    if isinstance(menu_item.content.controls[1], ft.Text):
-                        menu_item.content.controls[1].color = colors.button_text if is_active else colors.sidebar_text
-
-            # Hide/show elements based on collapsed state
-            user_profile.visible = not self.sidebar_collapsed
-            header_title.visible = not self.sidebar_collapsed
-            
-            self.sidebar.update()
-
-        # Modern sidebar header
-        header_title = ft.Text("Risk Core", size=20, weight=ft.FontWeight.BOLD, color=colors.sidebar_text)
-        sidebar_header = ft.Container(
-            padding=ft.padding.all(16),
-            content=ft.Row([
-                header_title,
-                ft.Container(expand=True),
-                ft.Container(
-                    content=ft.IconButton(
-                        icon=Icons.MENU, 
-                        icon_color=colors.sidebar_text,
-                        tooltip="Toggle sidebar", 
-                        on_click=toggle_sidebar,
-                        style=ft.ButtonStyle(
-                            shape=ft.RoundedRectangleBorder(radius=8)
-                        )
-                    ),
-                    bgcolor=colors.sidebar_item,
-                    border_radius=8,
-                    animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT)
-                )
-            ])
-        )
-
-        sidebar_content = [sidebar_header]
-        sidebar_content.extend(menu_containers)
-        sidebar_content.append(ft.Container(expand=True))  # Spacer
-        sidebar_content.append(user_profile)
-
-        # Create modern sidebar with glass effect and shadows
-        from src.utils.theme import build_gradient, darken_color
-        base_shade = colors.sidebar_bg
-        self.sidebar = ft.Container(
-            width=self.sidebar_expanded_width,
-            gradient=build_gradient(base_shade if self.page.theme_mode == ft.ThemeMode.LIGHT else darken_color(base_shade, 0.35)),
-            content=ft.Column(sidebar_content, expand=True),
-            animate=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT),
-            border=ft.border.only(right=ft.BorderSide(1, colors.border)),
-            shadow=ft.BoxShadow(
-                spread_radius=0,
-                blur_radius=20,
-                color=colors.shadow,
-                offset=ft.Offset(2, 0)
-            )
-        )
-
-        # Store menu containers for later reference when updating selection
-        self.menu_containers = menu_containers
-
         # Content area will hold the active view (themed)
         self.content_area = ft.Container(
             expand=True,
@@ -370,22 +185,54 @@ class RiskAssessmentApp:
             bgcolor=colors.bg
         )
 
-        # Layout with fixed sidebar width and flexible content
-        self.layout = ft.Row(
-            [
-                self.sidebar,
-                ft.Container(expand=True, content=self.content_area)
-            ],
-            spacing=0,
-            expand=True
-        )
-
-        # Start with login
-        self.show_login()
+        # Check for stored session and auto-login if exists
+        stored_user = await self.check_stored_session()
+        if stored_user:
+            print(f"Restored session for user: {stored_user.get('email')}")
+            self.current_user = stored_user
+            await self.on_login()
+        else:
+            self.show_login()
         print("Initial view setup complete")
 
         # Update page
         page.update()
+
+    async def check_stored_session(self):
+        """Check if there's a stored user session in client storage"""
+        try:
+            import json
+            print("DEBUG: Checking for stored session...")
+            stored_data = await self.page.client_storage.get_async("user_session")
+            print(f"DEBUG: Stored data retrieved: {stored_data is not None}")
+            if stored_data:
+                user_dict = json.loads(stored_data)
+                if user_dict and user_dict.get('email'):
+                    print(f"DEBUG: Found stored session for: {user_dict.get('email')}")
+                    return user_dict
+            print("DEBUG: No valid stored session found")
+        except Exception as e:
+            print(f"Error checking stored session: {e}")
+            import traceback
+            traceback.print_exc()
+        return None
+
+    async def save_session(self, user_dict):
+        """Save user session to client storage for persistence"""
+        try:
+            import json
+            await self.page.client_storage.set_async("user_session", json.dumps(user_dict))
+            print(f"Session saved for user: {user_dict.get('email')}")
+        except Exception as e:
+            print(f"Error saving session: {e}")
+
+    async def clear_session(self):
+        """Clear stored session on logout"""
+        try:
+            await self.page.client_storage.remove_async("user_session")
+            print("Session cleared")
+        except Exception as e:
+            print(f"Error clearing session: {e}")
 
     def show_login(self):
         """Show the login view with modern styling"""
@@ -427,8 +274,13 @@ class RiskAssessmentApp:
                 expand=True,
                 bgcolor=colors.bg
             )
-            self.page.controls = [self.login_view]
+            
+            # Clear page and show login (no sidebar)
+            self.page.controls.clear()
+            self.page.controls.append(self.login_view)
             self.page.update()
+            
+            print("DEBUG: Login screen shown (no sidebar)")
         except Exception as e:
             print(f"Error showing login: {e}")
             self.page.controls = [ft.Text(f"Error loading login view: {str(e)}")]
@@ -474,6 +326,8 @@ class RiskAssessmentApp:
                 }
                 print(f"Login successful for user: {user_dict}")
                 self.current_user = user_dict
+                # Save session for persistence across page refreshes
+                await self.save_session(user_dict)
                 await self.on_login()
             else:
                 self.show_snackbar("Invalid credentials", ft.Colors.RED)
@@ -516,9 +370,74 @@ class RiskAssessmentApp:
             self.views["projects"] = ProjectsView(self.page)
             self.views["users"] = UserManagementView(self.page, self.current_user)
 
-            # Show main application
-            self.page.controls = [self.layout]
+            # Clear any stale nav state
+            try:
+                await self.page.client_storage.remove_async("last_nav_index")
+            except:
+                pass
+
+            # Initialize sidebar only if not already created
+            if not self.sidebar:
+                from src.components.sidebar import Sidebar
+                
+                def nav_change_handler(index):
+                    print(f"Navigation change to index: {index}")
+                    try:
+                        # DEBUG: Check sidebar state BEFORE navigation
+                        if hasattr(self, 'sidebar') and self.sidebar:
+                            print(f"DEBUG [BEFORE NAV]: Sidebar exists")
+                        
+                        self.current_nav_index = index
+                        view_map = {0: "dashboard", 1: "assessments", 2: "heatmap", 3: "departments", 4: "projects", 5: "users", 6: "settings"}
+                        view_name = view_map.get(index, "dashboard")
+                        self.show_view(view_name)
+                        if hasattr(self.sidebar, 'update_selection'):
+                            self.sidebar.update_selection(index)
+                            self.page.update()
+                        
+                        # DEBUG: Check sidebar state AFTER navigation  
+                        if hasattr(self, 'sidebar') and self.sidebar:
+                            print(f"DEBUG [AFTER NAV]: Sidebar still exists")
+                    except Exception as e:
+                        print(f"Error in nav_change: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Create the sidebar as a self-contained component
+                self.sidebar = Sidebar(
+                    page=self.page,
+                    current_user=self.current_user,
+                    nav_change_callback=nav_change_handler,
+                    current_nav_index=self.current_nav_index
+                )
+                print(f"DEBUG: Created NEW Sidebar component")
+            else:
+                # Update existing sidebar with current user and callback if needed
+                self.sidebar.current_user = self.current_user
+                # Re-bind callback to ensure it uses current context
+                # (Optional depending on if context changed, but safe to do)
+                print(f"DEBUG: Reusing EXISTING Sidebar component")
+
+            # Initialize layout only if not already created
+            if not self.layout:
+                self.layout = ft.Row(
+                    [self.sidebar, ft.Container(expand=True, content=self.content_area)],
+                    spacing=0,
+                    expand=True
+                )
+                print("DEBUG: Created NEW layout with Sidebar component")
+            else:
+                print("DEBUG: Reusing EXISTING layout")
+            
+            # Ensure layout is the only control on the page
+            self.page.controls.clear()
+            self.page.controls.append(self.layout)
+            self.page.update()
+            
+            print("DEBUG: Page updated with Sidebar component")
+            
             self.show_view("dashboard")
+            
             # Update user badge with real values post-login
             try:
                 if hasattr(self, 'user_name_text') and isinstance(self.user_name_text, ft.Text):
@@ -529,6 +448,8 @@ class RiskAssessmentApp:
                     self.user_role_text.value = (self.current_user.get('role') or '').title()
             except Exception:
                 pass
+            
+            # Force full page update
             self.page.update()
         except Exception as e:
             print(f"Error in on_login: {e}")
@@ -542,6 +463,12 @@ class RiskAssessmentApp:
     def show_view(self, view_name):
         """Switch to a specific view"""
         print(f"Showing view: {view_name}")
+        
+        # DEBUG: Check sidebar state at start of show_view
+        if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
+            print(f"DEBUG [show_view START]: Sidebar has {len(self.sidebar.content.controls)} controls")
+            print(f"DEBUG [show_view START]: Sidebar object id: {id(self.sidebar)}")
+            print(f"DEBUG [show_view START]: Sidebar.content object id: {id(self.sidebar.content)}")
 
         try:
             # Lazy initialization of views
@@ -639,7 +566,16 @@ class RiskAssessmentApp:
                     self.update_sidebar_selection()
                 except Exception:
                     pass
+                
+                # DEBUG: Check sidebar state before page.update()
+                if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
+                    print(f"DEBUG [show_view BEFORE update]: Sidebar has {len(self.sidebar.content.controls)} controls")
+                
                 self.page.update()
+                
+                # DEBUG: Check sidebar state after page.update()
+                if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
+                    print(f"DEBUG [show_view AFTER update]: Sidebar has {len(self.sidebar.content.controls)} controls")
             else:
                 print(f"View {view_name} not found")
 
@@ -728,7 +664,7 @@ class RiskAssessmentApp:
 
     def change_theme(self, e, theme_mode, light_button, dark_button):
         """Change the theme of the application across all views with modern 2025 styling"""
-        from src.utils.theme import get_theme_colors
+        from src.utils.theme import get_theme_colors, build_gradient, darken_color, apply_theme_to_control
 
         self.page.theme_mode = theme_mode
         self.page.theme = ft.Theme(color_scheme_seed="#3B82F6")
@@ -871,35 +807,9 @@ class RiskAssessmentApp:
     def update_sidebar_selection(self):
         """Update the sidebar to reflect the current selection"""
         try:
-            from src.utils.theme import get_theme_colors, build_gradient
-            colors = get_theme_colors(self.page.theme_mode)
-
-            for menu_item in self.menu_containers:
-                is_active = menu_item.data == self.current_nav_index
-
-                # Apply gradient highlight only to the active item
-                if is_active:
-                    try:
-                        menu_item.gradient = build_gradient(colors.sidebar_item_active)
-                        menu_item.bgcolor = None
-                    except Exception:
-                        menu_item.gradient = None
-                        menu_item.bgcolor = colors.sidebar_item_active
-                else:
-                    menu_item.gradient = None
-                    menu_item.bgcolor = None
-
-                # Update icon and text colors
-                if hasattr(menu_item.content, 'controls') and len(menu_item.content.controls) >= 2:
-                    icon_holder = menu_item.content.controls[0]
-                    label = menu_item.content.controls[1]
-                    if isinstance(icon_holder, ft.Container) and hasattr(icon_holder, 'content') and isinstance(icon_holder.content, ft.Icon):
-                        icon_holder.content.color = colors.button_text if is_active else colors.sidebar_text
-                    if isinstance(label, ft.Text):
-                        label.color = colors.button_text if is_active else colors.sidebar_text
-                        label.weight = ft.FontWeight.BOLD if is_active else ft.FontWeight.NORMAL
-
-            self.page.update()
+            if hasattr(self, 'sidebar') and self.sidebar and hasattr(self.sidebar, 'update_selection'):
+                self.sidebar.update_selection(self.current_nav_index)
+                self.page.update()
         except Exception as e:
             print(f"Error updating sidebar: {e}")
 
@@ -910,4 +820,53 @@ async def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main, view=ft.AppView.FLET_APP)
+    import argparse
+    import sys
+    
+    # Check if running through flet CLI - if so, don't call ft.app()
+    # flet CLI handles the app lifecycle itself
+    is_flet_cli = 'flet' in sys.modules or any('flet' in str(arg).lower() for arg in sys.argv)
+    
+    parser = argparse.ArgumentParser(description="Risk Assessment Application")
+    parser.add_argument(
+        "--mode", 
+        choices=["app", "web"], 
+        default="web",
+        help="Run mode: 'app' for desktop application, 'web' for web browser (default)"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8550,
+        help="Port number for web mode (default: 8550)"
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host address for web mode (default: 127.0.0.1, use 0.0.0.0 for external access)"
+    )
+    
+    args, _ = parser.parse_known_args()
+    
+    assets_dir = "assets" if os.path.exists("assets") else None
+    
+    print(f"Starting Risk Assessment App in {'WEB' if args.mode == 'web' else 'DESKTOP'} mode")
+    print(f"Access at: http://{args.host}:{args.port}")
+    
+    if args.mode == "web":
+        ft.app(
+            target=main,
+            view=ft.AppView.WEB_BROWSER,
+            assets_dir=assets_dir,
+            port=args.port,
+            host=args.host
+        )
+    else:
+        ft.app(
+            target=main,
+            view=ft.AppView.FLET_APP,
+            assets_dir=assets_dir,
+            port=0,
+            host="127.0.0.1"
+        )

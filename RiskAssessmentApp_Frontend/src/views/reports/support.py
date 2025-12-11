@@ -484,3 +484,4 @@ class SupportView(BaseView):
         """Close the current dialog"""
         self.page.dialog.open = False
         self.page.update()
+

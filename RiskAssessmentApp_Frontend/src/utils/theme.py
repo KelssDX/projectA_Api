@@ -450,6 +450,7 @@ def create_modern_card(colors, content, padding=None, border_radius=16, elevatio
         bgcolor=colors.card_bg,
         border_radius=border_radius,
         border=ft.border.all(1, colors.border),
+        expand=True,
         shadow=ft.BoxShadow(
             spread_radius=0,
             blur_radius=shadow_blur,

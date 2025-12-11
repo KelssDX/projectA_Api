@@ -191,7 +191,7 @@ class RiskAssessmentApp:
         header = ft.Container(
             content=ft.Row([
                 ft.Text(
-                    "Risk Core",
+                    "Risk Coresss",
                     size=24,
                     weight=ft.FontWeight.BOLD,
                     color="#ffffff"

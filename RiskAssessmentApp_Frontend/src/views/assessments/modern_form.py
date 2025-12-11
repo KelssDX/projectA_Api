@@ -122,7 +122,7 @@ class ModernAssessmentForm(BaseView):
             self.content_container,
             ft.Divider(height=1, color="#e6e9ed"),
             self.navigation_buttons
-        ], spacing=0, expand=True)
+        ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
         self.cards_column.controls.clear()
         self.add_card(main_panel)
     

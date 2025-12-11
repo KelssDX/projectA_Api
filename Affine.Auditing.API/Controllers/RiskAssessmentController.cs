@@ -443,6 +443,76 @@ namespace Affina.Auditing.API.Controllers
                 return StatusCode(500, "An unexpected error occurred while creating reference data.");
             }
         }
+
+        [HttpPut]
+        [Route("UpdateReference/{referenceId}")]
+        public async Task<IActionResult> UpdateReference(int referenceId, [FromBody] RiskAssessmentReferenceInput request)
+        {
+            if (referenceId <= 0)
+                return BadRequest("Reference ID must be greater than zero.");
+
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            if (request == null)
+                return BadRequest("Reference data is required.");
+
+            try
+            {
+                var result = await _riskAssessmentRepository.UpdateRiskAssessmentReferenceAsync(referenceId, request);
+                
+                if (!result)
+                    return NotFound($"Risk Assessment Reference with ID {referenceId} not found.");
+
+                return Ok(new { 
+                    Success = true, 
+                    ReferenceId = referenceId, 
+                    Message = "Reference updated successfully." 
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(500, $"Database operation failed: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "An unexpected error occurred while updating reference data.");
+            }
+        }
+
+        [HttpDelete]
+        [Route("DeleteRiskAssessment/{referenceId}/{assessmentId}")]
+        public async Task<IActionResult> DeleteRiskAssessment(int referenceId, int assessmentId)
+        {
+            if (referenceId <= 0)
+                return BadRequest("Reference ID must be greater than zero.");
+
+            if (assessmentId <= 0)
+                return BadRequest("Assessment ID must be greater than zero.");
+
+            try
+            {
+                var result = await _riskAssessmentRepository.DeleteRiskAssessmentAsync(assessmentId, referenceId);
+
+                if (!result)
+                    return NotFound($"Risk Assessment with ID {assessmentId} not found for Reference ID {referenceId}.");
+
+                return Ok(new { 
+                    Success = true, 
+                    Message = "Risk assessment deleted successfully.",
+                    ReferenceId = referenceId,
+                    AssessmentId = assessmentId
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return StatusCode(500, $"Database operation failed: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "An unexpected error occurred while deleting risk assessment data.");
+            }
+        }
     }
     
     public class ControlTestingRequest

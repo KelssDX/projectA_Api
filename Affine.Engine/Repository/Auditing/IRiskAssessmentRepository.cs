@@ -1,4 +1,4 @@
-﻿using Affine.Engine.Model.Auditing.Assessment;
+using Affine.Engine.Model.Auditing.Assessment;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -34,7 +34,9 @@ namespace Affine.Engine.Repository.Auditing
         //Risk Assessment Operations
         Task<bool> AddRiskAssessmentAsync(List<RiskAssessmentCreateRequest> requests, RiskAssessmentReferenceInput reference, int? referenceId = null);
         Task<bool> UpdateRiskAssessmentsAsync(List<RiskAssessmentUpdateRequest> updates, int referenceId);
+        Task<bool> DeleteRiskAssessmentAsync(int riskAssessmentId, int referenceId);
         Task<int> AddRiskAssessmentReferenceAsync(RiskAssessmentReferenceInput reference);
+        Task<bool> UpdateRiskAssessmentReferenceAsync(int referenceId, RiskAssessmentReferenceInput reference);
 
         // (CRUD endpoints for departments/projects can be added here when backend supports them)
     }

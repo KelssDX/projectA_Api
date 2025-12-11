@@ -1,4 +1,5 @@
 import flet as ft
+from flet import Icons
 import asyncio
 from datetime import datetime
 from src.controllers.assessment_controller import AssessmentController
@@ -32,21 +33,21 @@ class ModernAssessmentDetails(BaseView):
         actions = [
             ft.ElevatedButton(
                 text="Start Control Testing",
-                icon=ft.Icons.PLAY_CIRCLE_OUTLINE,
+                icon=Icons.PLAY_ARROW,
                 bgcolor="#f39c12",
                 color="white",
                 on_click=self._start_control_testing,
             ),
             ft.PopupMenuButton(
                 items=[
-                    ft.PopupMenuItem(text="Export to PDF", icon=ft.Icons.PICTURE_AS_PDF, on_click=lambda e: self._export_assessment("pdf")),
-                    ft.PopupMenuItem(text="Export to Excel", icon=ft.Icons.TABLE_VIEW, on_click=lambda e: self._export_assessment("excel")),
-                    ft.PopupMenuItem(text="Share Assessment", icon=ft.Icons.SHARE, on_click=self._share_assessment),
+                    ft.PopupMenuItem(text="Export to PDF", icon=Icons.PICTURE_AS_PDF, on_click=lambda e: self._export_assessment("pdf")),
+                    ft.PopupMenuItem(text="Export to Excel", icon=Icons.TABLE_VIEW, on_click=lambda e: self._export_assessment("excel")),
+                    ft.PopupMenuItem(text="Share Assessment", icon=Icons.SHARE, on_click=self._share_assessment),
                     ft.PopupMenuItem(),
-                    ft.PopupMenuItem(text="Edit Assessment", icon=ft.Icons.EDIT, on_click=self._edit_assessment),
-                    ft.PopupMenuItem(text="Archive Assessment", icon=ft.Icons.ARCHIVE, on_click=self._archive_assessment),
+                    ft.PopupMenuItem(text="Edit Assessment", icon=Icons.EDIT, on_click=self._edit_assessment),
+                    ft.PopupMenuItem(text="Archive Assessment", icon=Icons.ARCHIVE, on_click=self._archive_assessment),
                 ],
-                icon=ft.Icons.MORE_VERT,
+                icon=Icons.MORE_VERT,
             )
         ]
         super().__init__(page, f"Risk Assessment: {reference_id or ''}", on_back=self._handle_back, actions=actions)
@@ -58,7 +59,7 @@ class ModernAssessmentDetails(BaseView):
         """Initialize the view"""
         self._build_ui()
         if self.reference_id:
-            asyncio.create_task(self._load_assessment_data())
+            self.page.run_task(self._load_assessment_data)
 
     def apply_theme(self, colors):
         try:
@@ -76,10 +77,23 @@ class ModernAssessmentDetails(BaseView):
         try:
             self._show_loading()
             
+            # Convert A-001 format to numeric ID for API if needed
+            api_reference_id = self.reference_id
+            if isinstance(self.reference_id, str) and self.reference_id.startswith("A-"):
+                try:
+                    api_reference_id = int(self.reference_id[2:])  # Extract number from A-001 -> 1
+                    print(f"DEBUG: Converted {self.reference_id} to {api_reference_id}")
+                except ValueError:
+                    print(f"DEBUG: Failed to convert {self.reference_id} to numeric ID")
+                    self._show_error("Invalid assessment ID format")
+                    return
+            
+            print(f"DEBUG: Loading assessment data for reference_id: {api_reference_id} (type: {type(api_reference_id)})")
+            
             # Load assessment and heatmap data concurrently
             tasks = [
-                self.assessment_controller.get_risk_assessment(self.reference_id),
-                self.assessment_controller.get_heatmap_data(self.reference_id)
+                self.assessment_controller.get_risk_assessment(api_reference_id),
+                self.assessment_controller.get_heatmap_data(api_reference_id)
             ]
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -87,12 +101,17 @@ class ModernAssessmentDetails(BaseView):
             self.assessment_data = results[0] if not isinstance(results[0], Exception) else None
             self.heatmap_data = results[1] if not isinstance(results[1], Exception) else None
             
+            print(f"DEBUG: Assessment data loaded: {self.assessment_data is not None}")
+            if self.assessment_data:
+                print(f"DEBUG: Assessment data keys: {list(self.assessment_data.keys()) if isinstance(self.assessment_data, dict) else 'Not a dict'}")
+            
             if self.assessment_data:
                 self._update_ui_with_data()
             else:
                 self._show_error("Failed to load assessment data")
                 
         except Exception as e:
+            print(f"DEBUG: Exception in _load_assessment_data: {str(e)}")
             self._show_error(f"Error loading assessment: {str(e)}")
         finally:
             self._hide_loading()
@@ -110,7 +129,7 @@ class ModernAssessmentDetails(BaseView):
             tabs,
             ft.Divider(height=1, color="#e6e9ed"),
             action_panel
-        ], spacing=0, expand=True)
+        ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
         self.cards_column.controls.clear()
         self.add_card(main_panel)
     
@@ -125,7 +144,7 @@ class ModernAssessmentDetails(BaseView):
             content=ft.Row([
                 # Workflow status
                 ft.Row([
-                    ft.Icon(ft.icons.ASSIGNMENT, color="#3498db", size=20),
+                    ft.Icon(Icons.ASSIGNMENT, color="#3498db", size=20),
                     ft.Text("Status:", weight=ft.FontWeight.BOLD, color="#2c3e50"),
                     ft.Container(
                         content=ft.Text(
@@ -144,7 +163,7 @@ class ModernAssessmentDetails(BaseView):
                 
                 # Last updated
                 ft.Row([
-                    ft.Icon(ft.icons.UPDATE, color="#7f8c8d", size=20),
+                    ft.Icon(Icons.UPDATE, color="#7f8c8d", size=20),
                     ft.Text("Last Updated:", weight=ft.FontWeight.BOLD, color="#2c3e50"),
                     ft.Text("Loading...", color="#7f8c8d")
                 ], spacing=10),
@@ -153,7 +172,7 @@ class ModernAssessmentDetails(BaseView):
                 
                 # Risk level indicator
                 ft.Row([
-                    ft.Icon(ft.icons.WARNING, color="#e74c3c", size=20),
+                    ft.Icon(Icons.WARNING, color="#e74c3c", size=20),
                     ft.Text("Risk Level:", weight=ft.FontWeight.BOLD, color="#2c3e50"),
                     ft.Container(
                         content=ft.Text(
@@ -180,32 +199,32 @@ class ModernAssessmentDetails(BaseView):
                 tabs=[
                     ft.Tab(
                         text="Overview",
-                        icon=ft.icons.DASHBOARD,
+                        icon=Icons.DASHBOARD,
                         content=self._build_overview_tab()
                     ),
                     ft.Tab(
                         text="Risk Analysis",
-                        icon=ft.icons.ANALYTICS,
+                        icon=Icons.ANALYTICS,
                         content=self._build_risk_analysis_tab()
                     ),
                     ft.Tab(
                         text="Controls",
-                        icon=ft.icons.SECURITY,
+                        icon=Icons.SECURITY,
                         content=self._build_controls_tab()
                     ),
                     ft.Tab(
                         text="Findings",
-                        icon=ft.icons.SEARCH,
+                        icon=Icons.SEARCH,
                         content=self._build_findings_tab()
                     ),
                     ft.Tab(
                         text="Heatmap",
-                        icon=ft.icons.GRID_VIEW,
+                        icon=Icons.VIEW_MODULE,
                         content=self._build_heatmap_tab()
                     ),
                     ft.Tab(
                         text="Collaboration",
-                        icon=ft.icons.GROUP,
+                        icon=Icons.GROUP,
                         content=self._build_collaboration_tab()
                     )
                 ]
@@ -214,15 +233,56 @@ class ModernAssessmentDetails(BaseView):
     
     def _build_overview_tab(self):
         """Build the overview tab content"""
+        # Get data values with fallbacks
+        client = "Loading..."
+        assessor = "Loading..."
+        start_date = "Loading..."
+        end_date = "Loading..."
+        approved_by = "Loading..."
+        risk_count = 0
+        
+        if self.assessment_data:
+            if isinstance(self.assessment_data, dict):
+                client = self.assessment_data.get('Client', 'N/A')
+                assessor = self.assessment_data.get('Assessor', 'N/A')
+                start_date = self.assessment_data.get('AssessmentStartDate', 'N/A')
+                end_date = self.assessment_data.get('AssessmentEndDate', 'N/A')
+                approved_by = self.assessment_data.get('ApprovedBy', 'N/A')
+                risk_assessments = self.assessment_data.get('RiskAssessments', [])
+                risk_count = len(risk_assessments) if risk_assessments else 0
+            else:
+                client = getattr(self.assessment_data, 'Client', 'N/A')
+                assessor = getattr(self.assessment_data, 'Assessor', 'N/A')
+                start_date = getattr(self.assessment_data, 'AssessmentStartDate', 'N/A')
+                end_date = getattr(self.assessment_data, 'AssessmentEndDate', 'N/A')
+                approved_by = getattr(self.assessment_data, 'ApprovedBy', 'N/A')
+                risk_assessments = getattr(self.assessment_data, 'RiskAssessments', [])
+                risk_count = len(risk_assessments) if risk_assessments else 0
+        
+        # Format dates
+        if start_date != "Loading..." and start_date != "N/A" and start_date:
+            try:
+                if isinstance(start_date, str):
+                    start_date = start_date.split('T')[0]  # Remove time part if present
+            except:
+                pass
+                
+        if end_date != "Loading..." and end_date != "N/A" and end_date:
+            try:
+                if isinstance(end_date, str):
+                    end_date = end_date.split('T')[0]  # Remove time part if present
+            except:
+                pass
+        
         return ft.Container(
             padding=20,
             content=ft.Column([
                 # Key metrics cards
                 ft.Row([
-                    self._create_metric_card("Risk Score", "Loading...", "#3498db", ft.icons.SCORE),
-                    self._create_metric_card("Controls Tested", "Loading...", "#2ecc71", ft.icons.SECURITY),
-                    self._create_metric_card("Findings", "Loading...", "#f39c12", ft.icons.WARNING),
-                    self._create_metric_card("Completion", "Loading...", "#9b59b6", ft.icons.PERCENT)
+                    self._create_metric_card("Reference ID", str(self.reference_id) if self.reference_id else "N/A", "#3498db", Icons.INFO),
+                    self._create_metric_card("Risk Items", str(risk_count), "#2ecc71", Icons.SECURITY),
+                    self._create_metric_card("Status", self.workflow_status, "#f39c12", Icons.INFO),
+                    self._create_metric_card("Completion", "100%" if risk_count > 0 else "0%", "#9b59b6", Icons.ASSESSMENT)
                 ], spacing=20),
                 
                 ft.Container(height=20),
@@ -237,12 +297,12 @@ class ModernAssessmentDetails(BaseView):
                                 content=ft.Column([
                                     ft.Text("Assessment Information", size=18, weight=ft.FontWeight.BOLD, color="#2c3e50"),
                                     ft.Divider(),
-                                    self._create_info_row("Title", "Loading..."),
-                                    self._create_info_row("Department", "Loading..."),
-                                    self._create_info_row("Project", "Loading..."),
-                                    self._create_info_row("Auditor", "Loading..."),
-                                    self._create_info_row("Assessment Date", "Loading..."),
-                                    self._create_info_row("Created", "Loading...")
+                                    self._create_info_row("Client", client),
+                                    self._create_info_row("Assessor", assessor),
+                                    self._create_info_row("Start Date", start_date),
+                                    self._create_info_row("End Date", end_date),
+                                    self._create_info_row("Approved By", approved_by),
+                                    self._create_info_row("Risk Items", str(risk_count))
                                 ])
                             )
                         )
@@ -280,96 +340,93 @@ class ModernAssessmentDetails(BaseView):
     
     def _build_risk_analysis_tab(self):
         """Build the risk analysis tab"""
+        # Build risk assessment items table
+        risk_items_content = []
+        
+        if self.assessment_data:
+            risk_assessments = []
+            if isinstance(self.assessment_data, dict):
+                risk_assessments = self.assessment_data.get('RiskAssessments', [])
+            else:
+                risk_assessments = getattr(self.assessment_data, 'RiskAssessments', [])
+            
+            if risk_assessments:
+                # Create table header
+                risk_items_content.append(
+                    ft.Row([
+                        ft.Container(ft.Text("Risk Title", weight=ft.FontWeight.BOLD), width=200),
+                        ft.Container(ft.Text("Likelihood", weight=ft.FontWeight.BOLD), width=120),
+                        ft.Container(ft.Text("Impact", weight=ft.FontWeight.BOLD), width=120),
+                        ft.Container(ft.Text("Category", weight=ft.FontWeight.BOLD), width=150),
+                        ft.Container(ft.Text("Controls", weight=ft.FontWeight.BOLD), width=200),
+                    ], spacing=10)
+                )
+                
+                risk_items_content.append(ft.Divider())
+                
+                # Add risk assessment rows
+                for i, risk in enumerate(risk_assessments):
+                    if isinstance(risk, dict):
+                        risk_title = risk.get('RisksAssessment_KeyRiskAndFactors', f'Risk {i+1}')
+                        likelihood = risk.get('RisksAssessment_RiskLikelihood', 'N/A')
+                        impact = risk.get('RisksAssessment_RiskImpact', 'N/A')
+                        category = risk.get('RisksAssessment_RiskCategory', 'N/A')
+                        controls = risk.get('ControlsAssessment_MitigatingControls', 'N/A')
+                    else:
+                        risk_title = getattr(risk, 'RisksAssessment_KeyRiskAndFactors', f'Risk {i+1}')
+                        likelihood = getattr(risk, 'RisksAssessment_RiskLikelihood', 'N/A')
+                        impact = getattr(risk, 'RisksAssessment_RiskImpact', 'N/A')
+                        category = getattr(risk, 'RisksAssessment_RiskCategory', 'N/A')
+                        controls = getattr(risk, 'ControlsAssessment_MitigatingControls', 'N/A')
+                    
+                    risk_items_content.append(
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Container(ft.Text(risk_title[:30] + "..." if len(risk_title) > 30 else risk_title), width=200),
+                                ft.Container(ft.Text(likelihood), width=120),
+                                ft.Container(ft.Text(impact), width=120),
+                                ft.Container(ft.Text(category), width=150),
+                                ft.Container(ft.Text(controls[:30] + "..." if len(controls) > 30 else controls), width=200),
+                            ], spacing=10),
+                            padding=ft.padding.symmetric(vertical=8),
+                            bgcolor="#f8f9fa" if i % 2 == 0 else None,
+                            border_radius=5
+                        )
+                    )
+            else:
+                risk_items_content.append(
+                    ft.Container(
+                        content=ft.Text("No risk assessments found", color="#7f8c8d"),
+                        padding=20,
+                        alignment=ft.alignment.center
+                    )
+                )
+        else:
+            risk_items_content.append(
+                ft.Container(
+                    content=ft.Text("Loading risk assessments...", color="#7f8c8d"),
+                    padding=20,
+                    alignment=ft.alignment.center
+                )
+            )
+        
         return ft.Container(
             padding=20,
             content=ft.Column([
-                # Risk matrix visualization
+                # Risk Assessment Items
                 ft.Card(
                     content=ft.Container(
                         padding=20,
                         content=ft.Column([
-                            ft.Text("Risk Assessment Matrix", size=18, weight=ft.FontWeight.BOLD, color="#2c3e50"),
+                            ft.Text("Risk Assessment Items", size=18, weight=ft.FontWeight.BOLD, color="#2c3e50"),
                             ft.Divider(),
-                            ft.Row([
-                                ft.Column([
-                                    ft.Text("Inherent Risk", size=14, weight=ft.FontWeight.BOLD),
-                                    ft.Container(
-                                        width=100,
-                                        height=100,
-                                        bgcolor="#e74c3c",
-                                        border_radius=50,
-                                        alignment=ft.alignment.center,
-                                        content=ft.Text("HIGH", color="white", weight=ft.FontWeight.BOLD)
-                                    )
-                                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                                ft.Container(width=50),
-                                ft.Icon(ft.icons.ARROW_FORWARD, size=30, color="#7f8c8d"),
-                                ft.Container(width=50),
-                                ft.Column([
-                                    ft.Text("Residual Risk", size=14, weight=ft.FontWeight.BOLD),
-                                    ft.Container(
-                                        width=100,
-                                        height=100,
-                                        bgcolor="#f39c12",
-                                        border_radius=50,
-                                        alignment=ft.alignment.center,
-                                        content=ft.Text("MEDIUM", color="white", weight=ft.FontWeight.BOLD)
-                                    )
-                                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-                            ], alignment=ft.MainAxisAlignment.CENTER)
+                            ft.Container(
+                                content=ft.Column(risk_items_content, scroll=ft.ScrollMode.AUTO),
+                                height=400
+                            )
                         ])
                     )
-                ),
-                
-                ft.Container(height=20),
-                
-                # Risk details
-                ft.Row([
-                    ft.Column([
-                        ft.Card(
-                            content=ft.Container(
-                                padding=20,
-                                content=ft.Column([
-                                    ft.Text("Risk Details", size=16, weight=ft.FontWeight.BOLD, color="#2c3e50"),
-                                    ft.Divider(),
-                                    self._create_info_row("Risk Category", "Loading..."),
-                                    self._create_info_row("Primary Risk", "Loading..."),
-                                    self._create_info_row("Secondary Risks", "Loading..."),
-                                    ft.Container(height=10),
-                                    ft.Text("Risk Description", size=14, weight=ft.FontWeight.BOLD),
-                                    ft.Container(
-                                        content=ft.Text("Loading risk description...", color="#7f8c8d"),
-                                        bgcolor="#f8f9fa",
-                                        padding=15,
-                                        border_radius=5
-                                    )
-                                ])
-                            )
-                        )
-                    ], expand=1),
-                    
-                    ft.Container(width=20),
-                    
-                    ft.Column([
-                        ft.Card(
-                            content=ft.Container(
-                                padding=20,
-                                content=ft.Column([
-                                    ft.Text("Risk Assessment", size=16, weight=ft.FontWeight.BOLD, color="#2c3e50"),
-                                    ft.Divider(),
-                                    self._create_info_row("Likelihood", "Loading..."),
-                                    self._create_info_row("Impact", "Loading..."),
-                                    self._create_info_row("Risk Score", "Loading..."),
-                                    self._create_info_row("Risk Rating", "Loading..."),
-                                    ft.Container(height=10),
-                                    ft.Text("Risk Appetite", size=14, weight=ft.FontWeight.BOLD),
-                                    ft.ProgressBar(value=0.8, bgcolor="#ecf0f1", color="#e74c3c"),
-                                    ft.Text("Above appetite threshold", color="#e74c3c", size=12)
-                                ])
-                            )
-                        )
-                    ], expand=1)
-                ])
+                )
             ], scroll=ft.ScrollMode.AUTO)
         )
     
@@ -384,7 +441,7 @@ class ModernAssessmentDetails(BaseView):
                     ft.Container(expand=True),
                     ft.ElevatedButton(
                         text="Test Controls",
-                        icon=ft.icons.PLAY_ARROW,
+                        icon=Icons.PLAY_ARROW,
                         bgcolor="#3498db",
                         color="white",
                         on_click=self._start_control_testing
@@ -442,7 +499,7 @@ class ModernAssessmentDetails(BaseView):
                                         )),
                                         ft.DataCell(ft.Text("2025-03-01")),
                                         ft.DataCell(ft.IconButton(
-                                            icon=ft.Icons.MORE_VERT,
+                                            icon=Icons.MORE_VERT,
                                             tooltip="Control actions"
                                         ))
                                     ])
@@ -468,7 +525,7 @@ class ModernAssessmentDetails(BaseView):
                     ft.Container(expand=True),
                     ft.ElevatedButton(
                         text="Add Finding",
-                        icon=ft.icons.ADD,
+                        icon=Icons.ADD,
                         bgcolor="#2ecc71",
                         color="white",
                         on_click=self._add_finding
@@ -527,7 +584,7 @@ class ModernAssessmentDetails(BaseView):
                                 ft.Container(expand=True),
                                 ft.ElevatedButton(
                                     text="Request Response",
-                                    icon=ft.icons.SEND,
+                                    icon=Icons.SEND,
                                     bgcolor="#3498db",
                                     color="white",
                                     on_click=self._request_management_response
@@ -579,7 +636,7 @@ class ModernAssessmentDetails(BaseView):
                     ft.Container(expand=True),
                     ft.ElevatedButton(
                         text="Add Comment",
-                        icon=ft.icons.COMMENT,
+                        icon=Icons.COMMENT,
                         bgcolor="#3498db",
                         color="white",
                         on_click=self._add_comment
@@ -628,7 +685,7 @@ class ModernAssessmentDetails(BaseView):
                                 ft.Container(expand=True),
                                 ft.ElevatedButton(
                                     text="Post Comment",
-                                    icon=ft.icons.SEND,
+                                    icon=Icons.SEND,
                                     bgcolor="#2ecc71",
                                     color="white"
                                 )
@@ -642,21 +699,21 @@ class ModernAssessmentDetails(BaseView):
                                     "John Smith", 
                                     "Started control testing for CTRL-001", 
                                     "2 hours ago",
-                                    ft.icons.PLAY_ARROW,
+                                    Icons.PLAY_ARROW,
                                     "#3498db"
                                 ),
                                 self._create_activity_item(
                                     "Sarah Johnson", 
                                     "Updated risk assessment findings", 
                                     "1 day ago",
-                                    ft.icons.EDIT,
+                                    Icons.EDIT,
                                     "#f39c12"
                                 ),
                                 self._create_activity_item(
                                     "Mike Davis", 
                                     "Added new control recommendation", 
                                     "2 days ago",
-                                    ft.icons.ADD_CIRCLE,
+                                    Icons.ADD_CIRCLE,
                                     "#2ecc71"
                                 )
                             ])
@@ -675,7 +732,7 @@ class ModernAssessmentDetails(BaseView):
             content=ft.Row([
                 ft.ElevatedButton(
                     text="Back to List",
-                    icon=ft.icons.LIST,
+                    icon=Icons.LIST,
                     on_click=self._handle_back,
                     bgcolor="#95a5a6",
                     color="white"
@@ -683,7 +740,7 @@ class ModernAssessmentDetails(BaseView):
                 ft.Container(expand=True),
                 ft.ElevatedButton(
                     text="Generate Report",
-                    icon=ft.icons.DESCRIPTION,
+                    icon=Icons.DESCRIPTION,
                     bgcolor="#9b59b6",
                     color="white",
                     on_click=self._generate_report
@@ -691,7 +748,7 @@ class ModernAssessmentDetails(BaseView):
                 ft.Container(width=10),
                 ft.ElevatedButton(
                     text="Edit Assessment",
-                    icon=ft.icons.EDIT,
+                    icon=Icons.EDIT,
                     bgcolor="#3498db",
                     color="white",
                     on_click=self._edit_assessment
@@ -816,9 +873,30 @@ class ModernAssessmentDetails(BaseView):
         if not self.assessment_data:
             return
         
-        # Update status bar and other components with real data
-        if hasattr(self, 'page') and self.page:
-            self.page.update()
+        try:
+            # Update the header title with assessment info
+            if hasattr(self.assessment_data, 'Client') or (isinstance(self.assessment_data, dict) and self.assessment_data.get('Client')):
+                client_name = self.assessment_data.get('Client') if isinstance(self.assessment_data, dict) else self.assessment_data.Client
+                self.header.content.controls[0].value = f"Risk Assessment: {client_name}"
+            
+            # Update workflow status based on assessment data
+            if hasattr(self.assessment_data, 'RiskAssessments') or (isinstance(self.assessment_data, dict) and self.assessment_data.get('RiskAssessments')):
+                assessments = self.assessment_data.get('RiskAssessments') if isinstance(self.assessment_data, dict) else self.assessment_data.RiskAssessments
+                if assessments and len(assessments) > 0:
+                    self.workflow_status = "Completed"
+                else:
+                    self.workflow_status = "In Progress"
+            
+            # Rebuild UI with loaded data
+            self._build_ui()
+            
+            # Update status bar and other components with real data
+            if hasattr(self, 'page') and self.page:
+                self.page.update()
+                
+        except Exception as e:
+            print(f"Error updating UI with data: {str(e)}")
+            self._show_error(f"Error displaying assessment data: {str(e)}")
     
     # Action handlers
     def _handle_back(self, e):
@@ -937,3 +1015,4 @@ class ModernAssessmentDetails(BaseView):
             await self.assessment_controller.close()
         except Exception as e:
             print(f"Error during cleanup: {e}") 
+

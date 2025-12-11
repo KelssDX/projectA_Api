@@ -6,7 +6,7 @@ class Assessment:
     Model representing a risk assessment.
     """
 
-    def __init__(self, id=None, title=None, department_id=None, department=None,
+    def __init__(self, id=None, reference_id=None, title=None, department_id=None, department=None,
                  project_id=None, project=None, auditor_id=None, auditor=None,
                  assessment_date=None, risk_score=None, risk_level=None,
                  scope=None, findings=None, recommendations=None, risk_factors=None,
@@ -34,6 +34,7 @@ class Assessment:
             updated_at: Timestamp when the assessment was last updated
         """
         self.id = id
+        self.reference_id = reference_id
         self.title = title
         self.department_id = department_id
         self.department = department
@@ -62,50 +63,76 @@ class Assessment:
         Returns:
             Assessment: Instance of Assessment class
         """
-        # Format ID if numeric (e.g., 1 -> "A-001")
-        assessment_id = json_data.get("id")
-        if isinstance(assessment_id, int):
-            assessment_id = f"A-{assessment_id:03d}"
+        raw_id = json_data.get("id")
+        reference_id = (
+            json_data.get("reference_id")
+            or json_data.get("referenceId")
+            or json_data.get("ReferenceId")
+        )
 
-        # Parse dates if they're strings
-        assessment_date = json_data.get("assessment_date")
+        numeric_id = None
+        if isinstance(raw_id, int):
+            numeric_id = raw_id
+        else:
+            try:
+                numeric_id = int(raw_id) if raw_id is not None else None
+            except (TypeError, ValueError):
+                if isinstance(raw_id, str) and raw_id.startswith("A-"):
+                    try:
+                        numeric_id = int(raw_id[2:])
+                    except ValueError:
+                        numeric_id = None
+
+        if reference_id is None and numeric_id is not None:
+            reference_id = numeric_id
+
+        formatted_id = raw_id
+        if numeric_id is not None:
+            formatted_id = f"A-{numeric_id:03d}"
+        elif isinstance(reference_id, int):
+            formatted_id = f"A-{reference_id:03d}"
+
+        if formatted_id is None and reference_id is not None:
+            formatted_id = f"A-{reference_id:03d}"
+
+        assessment_date = (
+            json_data.get("assessment_date")
+            or json_data.get("assessmentDate")
+        )
         if isinstance(assessment_date, str):
             try:
                 assessment_date = datetime.strptime(assessment_date, "%Y-%m-%d").date()
             except ValueError:
-                pass
+                try:
+                    assessment_date = datetime.strptime(assessment_date, "%Y-%m-%dT%H:%M:%S").date()
+                except ValueError:
+                    pass
 
-        created_at = json_data.get("created_at")
+        created_at = json_data.get("created_at") or json_data.get("createdAt")
         if isinstance(created_at, str):
-            try:
-                created_at = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
                 try:
-                    created_at = datetime.strptime(created_at, "%Y-%m-%d")
+                    created_at = datetime.strptime(created_at, fmt)
+                    break
                 except ValueError:
-                    pass
+                    continue
 
-        updated_at = json_data.get("updated_at")
+        updated_at = json_data.get("updated_at") or json_data.get("updatedAt")
         if isinstance(updated_at, str):
-            try:
-                updated_at = datetime.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
                 try:
-                    updated_at = datetime.strptime(updated_at, "%Y-%m-%d")
+                    updated_at = datetime.strptime(updated_at, fmt)
+                    break
                 except ValueError:
-                    pass
+                    continue
 
-        # Format risk factors if they're in a different format
-        risk_factors = json_data.get("risk_factors", [])
+        risk_factors = json_data.get("risk_factors") or json_data.get("riskFactors") or []
         if isinstance(risk_factors, list):
-            # Ensure each risk factor has name and value keys
             formatted_factors = []
             for factor in risk_factors:
                 if isinstance(factor, dict):
-                    # If factor is already a dict with name and value, use it
                     if "name" in factor and "value" in factor:
                         formatted_factors.append(factor)
-                    # If factor uses different keys, convert to standard format
                     elif "factor_name" in factor and "factor_value" in factor:
                         formatted_factors.append({
                             "name": factor["factor_name"],
@@ -115,17 +142,18 @@ class Assessment:
             risk_factors = formatted_factors
 
         return cls(
-            id=assessment_id,
-            title=json_data.get("title"),
-            department_id=json_data.get("department_id"),
+            id=formatted_id,
+            reference_id=reference_id,
+            title=json_data.get("title") or json_data.get("client"),
+            department_id=json_data.get("department_id") or json_data.get("departmentId"),
             department=json_data.get("department"),
-            project_id=json_data.get("project_id"),
+            project_id=json_data.get("project_id") or json_data.get("projectId"),
             project=json_data.get("project"),
-            auditor_id=json_data.get("auditor_id"),
-            auditor=json_data.get("auditor"),
+            auditor_id=json_data.get("auditor_id") or json_data.get("auditorId"),
+            auditor=json_data.get("auditor") or json_data.get("assessor"),
             assessment_date=assessment_date,
-            risk_score=json_data.get("risk_score"),
-            risk_level=json_data.get("risk_level"),
+            risk_score=json_data.get("risk_score") or json_data.get("riskScore"),
+            risk_level=json_data.get("risk_level") or json_data.get("riskLevel"),
             scope=json_data.get("scope"),
             findings=json_data.get("findings"),
             recommendations=json_data.get("recommendations"),
@@ -141,7 +169,6 @@ class Assessment:
         Returns:
             dict: Assessment data as a dictionary
         """
-        # Format dates as strings if they're datetime objects
         assessment_date = self.assessment_date
         if hasattr(assessment_date, "strftime"):
             assessment_date = assessment_date.strftime("%Y-%m-%d")
@@ -154,16 +181,21 @@ class Assessment:
         if hasattr(updated_at, "strftime"):
             updated_at = updated_at.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Extract numeric ID if it's in "A-001" format
-        assessment_id = self.id
-        if isinstance(assessment_id, str) and assessment_id.startswith("A-"):
-            try:
-                assessment_id = int(assessment_id[2:])
-            except ValueError:
-                pass
+        numeric_id = self.reference_id
+        if numeric_id is None:
+            raw_id = self.id
+            if isinstance(raw_id, str) and raw_id.startswith("A-"):
+                try:
+                    numeric_id = int(raw_id[2:])
+                except ValueError:
+                    numeric_id = None
+            elif isinstance(raw_id, int):
+                numeric_id = raw_id
+            else:
+                numeric_id = raw_id
 
         return {
-            "id": assessment_id,
+            "id": numeric_id,
             "title": self.title,
             "department_id": self.department_id,
             "department": self.department,
@@ -179,7 +211,8 @@ class Assessment:
             "recommendations": self.recommendations,
             "risk_factors": self.risk_factors,
             "created_at": created_at,
-            "updated_at": updated_at
+            "updated_at": updated_at,
+            "reference_id": self.reference_id,
         }
 
     def __str__(self):
@@ -240,3 +273,4 @@ class Assessment:
         """
         self.risk_score = self.calculate_risk_score()
         self.risk_level = self.determine_risk_level(self.risk_score)
+

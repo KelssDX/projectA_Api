@@ -32,14 +32,14 @@ class DepartmentsView(BaseView):
 
     async def _load_departments_async(self):
         """Load departments data from the API"""
-        print("🔧 DEBUG: _load_departments_async called")
+        print("DEBUG: _load_departments_async called")
         try:
-            print("🔧 DEBUG: Loading departments from src.api...")
+            print("DEBUG: Loading departments from src.api...")
             
             # Get departments data from API
-            print("🔧 DEBUG: Calling auditing_client.get_departments()")
+            print("DEBUG: Calling auditing_client.get_departments()")
             api_departments = await self.auditing_client.get_departments()
-            print(f"🔧 DEBUG: API returned {len(api_departments) if api_departments else 0} departments")
+            print(f"DEBUG: API returned {len(api_departments) if api_departments else 0} departments")
             
             if api_departments:
                 # Convert API data to dictionaries if needed
@@ -179,19 +179,19 @@ class DepartmentsView(BaseView):
         """Build a table of departments styled like user_management.py"""
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
 
-        # Header
+        # Header (responsive: stretch main columns)
         header = ft.Container(
             height=40,
-            bgcolor=None,
+            bgcolor=colors.surface,
             border=ft.border.only(bottom=ft.BorderSide(1, colors.border)),
             padding=ft.padding.only(left=30, right=30),
             content=ft.Row([
-                ft.Container(width=240, content=ft.Text("Name", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=220, content=ft.Text("Head", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=150, content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=150, content=ft.Text("Assessments", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
-                ft.Container(width=200, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=colors.text_secondary, text_align=ft.TextAlign.CENTER)),
-            ])
+                ft.Container(expand=2, content=ft.Text("Name", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Head", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1, content=ft.Text("Assessments", weight=ft.FontWeight.BOLD, color=colors.text_secondary)),
+                ft.Container(expand=1.5, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=colors.text_secondary, text_align=ft.TextAlign.CENTER)),
+            ], expand=True)
         )
 
         # Rows
@@ -272,10 +272,10 @@ class DepartmentsView(BaseView):
             border=ft.border.only(bottom=ft.BorderSide(1, colors.border)),
             padding=ft.padding.only(left=30, right=30),
             content=ft.Row([
-                ft.Container(width=240, content=ft.Text(dept.get("name", "-"), color=colors.text_primary)),
-                ft.Container(width=220, content=ft.Text(dept.get("head", "-"), color=colors.text_primary)),
+                ft.Container(expand=2, content=ft.Text(dept.get("name", "-"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(expand=1, content=ft.Text(dept.get("head", "-"), color=colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
                 ft.Container(
-                    width=150,
+                    expand=1,
                     content=ft.Container(
                         width=90,
                         height=30,
@@ -285,9 +285,9 @@ class DepartmentsView(BaseView):
                         content=ft.Text(str(dept.get("risk_level", "-")), color="white", size=12, weight=ft.FontWeight.BOLD),
                     ),
                 ),
-                ft.Container(width=150, content=ft.Text(str(dept.get("assessments", 0)), color=colors.text_primary)),
+                ft.Container(expand=1, content=ft.Text(str(dept.get("assessments", 0)), color=colors.text_primary)),
                 ft.Container(
-                    width=200,
+                    expand=1.5,
                     content=ft.Row([
                         ft.Container(
                             width=40,
@@ -320,7 +320,7 @@ class DepartmentsView(BaseView):
                         ),
                     ], alignment=ft.MainAxisAlignment.CENTER),
                 ),
-            ])
+            ], expand=True)
         )
 
     def filter_departments(self, e):

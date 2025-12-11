@@ -80,8 +80,12 @@ class BaseView(ft.Container):
             alignment=ft.MainAxisAlignment.START if not right_controls else ft.MainAxisAlignment.SPACE_BETWEEN,
         )
 
-        # Column for all cards
-        self.cards_column = ft.Column(spacing=16, expand=True)
+        # Column for all cards (stretch children to full width)
+        self.cards_column = ft.Column(
+            spacing=16,
+            expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
 
         # Wrap main content in a Container to apply padding/bg color
         self.content = ft.Container(
@@ -92,6 +96,7 @@ class BaseView(ft.Container):
                 spacing=16,
                 expand=True,
                 scroll=ft.ScrollMode.AUTO,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
         )
 

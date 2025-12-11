@@ -207,7 +207,7 @@ class RiskAssessmentApp:
             self.sidebar.update()
 
         # Modern sidebar header
-        header_title = ft.Text("Risk Core", size=20, weight=ft.FontWeight.BOLD, color=colors.sidebar_text)
+        header_title = ft.Text("Risk Core77", size=20, weight=ft.FontWeight.BOLD, color=colors.sidebar_text)
         sidebar_header = ft.Container(
             padding=ft.padding.all(16),
             content=ft.Row([

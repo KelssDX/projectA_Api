@@ -520,6 +520,42 @@ namespace Affine.Engine.Repository.Auditing
             }
         }
 
+        public async Task<bool> DeleteRiskAssessmentAsync(int riskAssessmentId, int referenceId)
+        {
+            if (riskAssessmentId <= 0)
+            {
+                throw new ArgumentException("Risk Assessment ID must be greater than zero.", nameof(riskAssessmentId));
+            }
+
+            if (referenceId <= 0)
+            {
+                throw new ArgumentException("Reference ID must be greater than zero.", nameof(referenceId));
+            }
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string deleteQuery = @"
+                    DELETE FROM riskassessment 
+                    WHERE RiskAssessment_RefID = @RiskAssessmentId 
+                    AND reference_id = @ReferenceId";
+
+                var rowsAffected = await dbConnection.ExecuteAsync(deleteQuery, new 
+                { 
+                    RiskAssessmentId = riskAssessmentId, 
+                    ReferenceId = referenceId 
+                });
+
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to delete risk assessment. Error: {ex.Message}", ex);
+            }
+        }
+
         #endregion
 
         #region RA_Tables
@@ -768,6 +804,51 @@ namespace Affine.Engine.Repository.Auditing
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Failed to add risk assessment reference. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> UpdateRiskAssessmentReferenceAsync(int referenceId, RiskAssessmentReferenceInput reference)
+        {
+            if (reference == null)
+            {
+                throw new ArgumentNullException(nameof(reference), "Risk assessment reference cannot be null.");
+            }
+
+            if (referenceId <= 0)
+            {
+                throw new ArgumentException("Reference ID must be greater than zero.", nameof(referenceId));
+            }
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                string query = @"
+                    UPDATE riskassessmentreference SET
+                        client = @Client, 
+                        assessment_start_date = @AssessmentStartDate, 
+                        assessment_end_date = @AssessmentEndDate, 
+                        assessor = @Assessor, 
+                        approved_by = @ApprovedBy
+                    WHERE reference_id = @ReferenceId";
+
+                var parameters = new
+                {
+                    ReferenceId = referenceId,
+                    reference.Client,
+                    reference.AssessmentStartDate,
+                    reference.AssessmentEndDate,
+                    reference.Assessor,
+                    reference.ApprovedBy
+                };
+
+                var rowsAffected = await dbConnection.ExecuteAsync(query, parameters);
+                return rowsAffected > 0;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to update risk assessment reference. Error: {ex.Message}", ex);
             }
         }
     }

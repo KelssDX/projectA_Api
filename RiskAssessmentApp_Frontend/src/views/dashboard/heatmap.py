@@ -510,30 +510,30 @@ class HeatmapView(BaseView):
 
     def apply_reference_filter(self, e):
         """Apply reference filter and reload heatmap data"""
-        print("🔧 DEBUG: apply_reference_filter called")
+        print("DEBUG: apply_reference_filter called")
         try:
             # Get reference ID from text field if available
             if hasattr(self, 'reference_field'):
                 old_id = self.reference_id
                 self.reference_id = int(self.reference_field.value or 1)
-                print(f"🔧 DEBUG: Changed reference ID from {old_id} to {self.reference_id}")
-            print("🔧 DEBUG: Calling load_data()")
+                print(f"DEBUG: Changed reference ID from {old_id} to {self.reference_id}")
+            print("DEBUG: Calling load_data()")
             self.load_data()
-            print("✅ DEBUG: Reference filter applied successfully")
+            print("DEBUG: Reference filter applied successfully")
         except Exception as error:
-            print(f"❌ DEBUG: Error applying reference filter: {error}")
+            print(f"ERROR: Error applying reference filter: {error}")
             import traceback
             traceback.print_exc()
 
     def refresh_heatmap(self, e):
         """Refresh heatmap data"""
-        print("🔧 DEBUG: refresh_heatmap called")
+        print("DEBUG: refresh_heatmap called")
         try:
-            print("🔧 DEBUG: Calling load_data()")
+            print("DEBUG: Calling load_data()")
             self.load_data()
-            print("✅ DEBUG: Heatmap refreshed successfully")
+            print("DEBUG: Heatmap refreshed successfully")
         except Exception as error:
-            print(f"❌ DEBUG: Error refreshing heatmap: {error}")
+            print(f"ERROR: Error refreshing heatmap: {error}")
             import traceback
             traceback.print_exc()
 
