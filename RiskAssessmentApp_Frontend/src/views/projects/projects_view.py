@@ -1,5 +1,6 @@
 import flet as ft
 from flet import Icons
+import asyncio
 from src.api.auditing_client import AuditingAPIClient
 from src.utils.theme import (
     get_theme_colors,
@@ -18,6 +19,7 @@ class ProjectsView(BaseView):
         self.projects = []
         self.filtered_projects = []
         self.auditing_client = AuditingAPIClient()
+        self.departments = []
         # Theme and header actions
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
         actions = [
@@ -29,6 +31,33 @@ class ProjectsView(BaseView):
         # Build the controls area and table as cards
         self._build_ui()
         self.load_projects()  # Load projects from API
+
+    def _open_dialog(self, dialog: ft.AlertDialog):
+        if hasattr(self.page, "open"):
+            self.page.open(dialog)
+            return
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def _close_dialog(self, dialog: ft.AlertDialog):
+        if hasattr(self.page, "close"):
+            self.page.close(dialog)
+            return
+        try:
+            dialog.open = False
+        except Exception:
+            if hasattr(self.page, "dialog") and self.page.dialog:
+                self.page.dialog.open = False
+        self.page.update()
+
+    def _status_to_id(self, status: str):
+        mapping = {"Planning": 1, "Active": 2, "Completed": 3, "On Hold": 4, "Cancelled": 5}
+        return mapping.get(status, 1)
+
+    def _risk_level_to_id(self, risk_level: str):
+        mapping = {"High": 1, "Medium": 2, "Low": 3}
+        return mapping.get(risk_level, 3)
 
     def refresh_table(self):
         """Build table like user_management: header + rows, with empty state."""
@@ -112,35 +141,11 @@ class ProjectsView(BaseView):
                 ft.Container(
                     expand=1.5,
                     content=ft.Row([
-                        ft.Container(
-                            width=40,
-                            height=30,
-                            bgcolor="#3498db",
-                            border_radius=5,
-                            alignment=ft.alignment.center,
-                            content=ft.Icon(Icons.VISIBILITY, color="white", size=16),
-                            on_click=lambda e, p=proj: self.view_project_details(p)
-                        ),
+                        ft.ElevatedButton(text="View", on_click=lambda e, p=proj: self.view_project_details(p)),
                         ft.Container(width=10),
-                        ft.Container(
-                            width=40,
-                            height=30,
-                            bgcolor="#2ecc71",
-                            border_radius=5,
-                            alignment=ft.alignment.center,
-                            content=ft.Icon(Icons.EDIT, color="white", size=16),
-                            on_click=lambda e, p=proj: self.edit_project(p)
-                        ),
+                        ft.ElevatedButton(text="Edit", on_click=lambda e, p=proj: self.edit_project(p)),
                         ft.Container(width=10),
-                        ft.Container(
-                            width=40,
-                            height=30,
-                            bgcolor="#e74c3c",
-                            border_radius=5,
-                            alignment=ft.alignment.center,
-                            content=ft.Icon(Icons.DELETE, color="white", size=16),
-                            on_click=lambda e, p=proj: self.delete_project(p)
-                        ),
+                        ft.ElevatedButton(text="Delete", on_click=lambda e, p=proj: self.delete_project(p)),
                     ], alignment=ft.MainAxisAlignment.CENTER)
                 )
             ], expand=True)
@@ -157,48 +162,38 @@ class ProjectsView(BaseView):
         try:
             print("DEBUG: Loading projects from src.api...")
             
-            # Get projects data from API
+            # Load projects and departments (for dropdown + optional name mapping)
             print("DEBUG: Calling auditing_client.get_projects()")
-            api_projects = await self.auditing_client.get_projects()
+            projects_task = self.auditing_client.get_projects()
+            departments_task = self.auditing_client.get_departments()
+            api_projects, api_departments = await asyncio.gather(projects_task, departments_task, return_exceptions=True)
+            if not isinstance(api_departments, Exception) and api_departments:
+                self.departments = api_departments
             print(f"DEBUG: API returned {len(api_projects) if api_projects else 0} projects")
             
-            if api_projects:
-                # Convert API data to dictionaries if needed
+            if api_projects and not isinstance(api_projects, Exception):
+                # API client already normalizes the data, just add department_name mapping
                 self.projects = []
                 for proj_data in api_projects:
                     if isinstance(proj_data, dict):
-                        # Normalize expected keys
-                        normalized = {
-                            'id': proj_data.get('id') or proj_data.get('Id'),
-                            'name': proj_data.get('name') or proj_data.get('Name', 'Unknown'),
-                            'description': proj_data.get('description') or proj_data.get('Description', ''),
-                            'status_id': proj_data.get('status_id') or proj_data.get('StatusId'),
-                            # UI expects 'status' string - map if provided, else default to id
-                            'status': proj_data.get('status') or proj_data.get('Status'),
-                            'department_id': proj_data.get('department_id') or proj_data.get('DepartmentId'),
-                            'start_date': proj_data.get('start_date') or proj_data.get('StartDate'),
-                            'end_date': proj_data.get('end_date') or proj_data.get('EndDate'),
-                            'budget': proj_data.get('budget') or proj_data.get('Budget'),
-                            'risk_level_id': proj_data.get('risk_level_id') or proj_data.get('RiskLevelId'),
-                            'risk_level': proj_data.get('risk_level') or proj_data.get('RiskLevel', 'Low'),
-                            'manager': proj_data.get('manager') or proj_data.get('Manager')
-                        }
+                        # Use the already-normalized data from API client
+                        normalized = proj_data.copy()
+                        # Map department name if available
+                        dept_id = normalized.get("department_id")
+                        if dept_id and isinstance(self.departments, list):
+                            match = next((d for d in self.departments if isinstance(d, dict) and d.get("id") == dept_id), None)
+                            if match:
+                                normalized["department_name"] = match.get("name", "-")
+                            else:
+                                normalized["department_name"] = "-"
+                        else:
+                            normalized["department_name"] = "-"
+                        # Ensure manager is a string, not a date
+                        if normalized.get("manager") and not isinstance(normalized.get("manager"), str):
+                            normalized["manager"] = str(normalized.get("manager", "-"))
+                        if not normalized.get("manager"):
+                            normalized["manager"] = "-"
                         self.projects.append(normalized)
-                    else:
-                        # Convert object to dict if needed
-                        self.projects.append({
-                            'id': getattr(proj_data, 'Id', getattr(proj_data, 'id', None)),
-                            'name': getattr(proj_data, 'Name', getattr(proj_data, 'name', 'Unknown')),
-                            'description': getattr(proj_data, 'Description', getattr(proj_data, 'description', '')),
-                            'status_id': getattr(proj_data, 'StatusId', getattr(proj_data, 'status_id', None)),
-                            'status': getattr(proj_data, 'Status', getattr(proj_data, 'status', None)),
-                            'department_id': getattr(proj_data, 'DepartmentId', getattr(proj_data, 'department_id', None)),
-                            'start_date': getattr(proj_data, 'StartDate', getattr(proj_data, 'start_date', None)),
-                            'end_date': getattr(proj_data, 'EndDate', getattr(proj_data, 'end_date', None)),
-                            'budget': getattr(proj_data, 'Budget', getattr(proj_data, 'budget', None)),
-                            'risk_level_id': getattr(proj_data, 'RiskLevelId', getattr(proj_data, 'risk_level_id', None)),
-                            'manager': getattr(proj_data, 'Manager', getattr(proj_data, 'manager', None))
-                        })
                 
                 print(f"Loaded {len(self.projects)} projects from API")
             else:
@@ -250,10 +245,11 @@ class ProjectsView(BaseView):
             label="Status",
             options=[
                 ft.dropdown.Option("All"),
-                ft.dropdown.Option("Not Started"),
-                ft.dropdown.Option("In Progress"),
+                ft.dropdown.Option("Planning"),
+                ft.dropdown.Option("Active"),
                 ft.dropdown.Option("Completed"),
                 ft.dropdown.Option("On Hold"),
+                ft.dropdown.Option("Cancelled"),
             ],
             value="All",
             on_change=self.filter_projects,
@@ -356,6 +352,9 @@ class ProjectsView(BaseView):
 
     # Legacy cards function kept for backward references; redirect to table
     def update_project_cards(self):
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        if not hasattr(self, "project_cards") or self.project_cards is None:
+            self.project_cards = ft.Column()
         self.refresh_table()
 
         # Add card for each project
@@ -542,12 +541,13 @@ class ProjectsView(BaseView):
         status_dropdown = ft.Dropdown(
             label="Status",
             options=[
-                ft.dropdown.Option("Not Started"),
-                ft.dropdown.Option("In Progress"),
+                ft.dropdown.Option("Planning"),
+                ft.dropdown.Option("Active"),
                 ft.dropdown.Option("On Hold"),
                 ft.dropdown.Option("Completed"),
+                ft.dropdown.Option("Cancelled"),
             ],
-            value="Not Started",
+            value="Planning",
             width=200
         )
 
@@ -584,8 +584,7 @@ class ProjectsView(BaseView):
 
         # Define dialog close function
         def close_dialog(e):
-            dialog.open = False
-            self.page.update()
+            self._close_dialog(dialog)
 
         # Define save function
         def save_project(e):
@@ -634,92 +633,19 @@ class ProjectsView(BaseView):
                     self.show_status("Invalid budget amount", is_error=True)
                     return
 
-            # Create new project
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("""
-                    INSERT INTO projects 
-                    (name, description, status, department_id, start_date, end_date, budget, risk_level, manager)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id, name, description, status, department_id, start_date, end_date, budget, risk_level, manager
-                """, (
-                    name_field.value,
-                    description_field.value,
-                    status_dropdown.value,
-                    dept_id,
-                    start_date,
-                    end_date,
-                    budget,
-                    risk_level_dropdown.value,
-                    manager_field.value
-                ))
-
-                new_proj = cursor.fetchone()
-                conn.commit()
-
-                # Get department name for the new project
-                if dept_id:
-                    cursor.execute("SELECT name FROM departments WHERE id = %s", (dept_id,))
-                    result = cursor.fetchone()
-                    if result:
-                        new_proj["department_name"] = result["name"]
-                    else:
-                        new_proj["department_name"] = "Unknown"
-                else:
-                    new_proj["department_name"] = "None"
-
-                cursor.close()
-                conn.close()
-
-                # Convert to a regular dictionary
-                new_proj = dict(new_proj)
-
-                # API version (commented out)
-                # new_proj_data = {
-                #     "name": name_field.value,
-                #     "description": description_field.value,
-                #     "status": status_dropdown.value,
-                #     "department_id": dept_id,
-                #     "start_date": start_date,
-                #     "end_date": end_date,
-                #     "budget": budget,
-                #     "risk_level": risk_level_dropdown.value,
-                #     "manager": manager_field.value
-                # }
-                # response = requests.post(f"{self.api_base_url}/projects", json=new_proj_data)
-                # if response.status_code == 201:
-                #     new_proj = response.json()
-                #
-                #     # Get department name if available
-                #     if dept_id:
-                #         dept_response = requests.get(f"{self.api_base_url}/departments/{dept_id}")
-                #         if dept_response.status_code == 200:
-                #             department = dept_response.json()
-                #             new_proj["department_name"] = department["name"]
-                #         else:
-                #             new_proj["department_name"] = "Unknown"
-                #     else:
-                #         new_proj["department_name"] = "None"
-                # else:
-                #     raise Exception(f"API returned status {response.status_code}")
-
-                # Add to projects list
-                self.projects.append(new_proj)
-                self.filtered_projects = self.projects.copy()
-
-                # Close dialog
-                close_dialog(e)
-
-                # Refresh table
-                self.refresh_table()
-
-                # Show success message
-                self.show_status(f"Project '{new_proj['name']}' added successfully")
-            except Exception as ex:
-                print(f"Error adding project: {ex}")
-                self.show_status(f"Error adding project: {str(ex)}", is_error=True)
+            self.page.run_task(
+                self._create_project_async,
+                dialog,
+                name_field.value,
+                description_field.value,
+                status_dropdown.value,
+                dept_id,
+                start_date,
+                end_date,
+                budget,
+                risk_level_dropdown.value,
+                manager_field.value,
+            )
 
         # Create dialog
         dialog = ft.AlertDialog(
@@ -753,9 +679,30 @@ class ProjectsView(BaseView):
         )
 
         # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
+
+    async def _create_project_async(self, dialog, name, description, status, dept_id, start_date, end_date, budget, risk_level, manager):
+        try:
+            payload = {
+                "name": name,
+                "description": description,
+                "statusId": self._status_to_id(status),
+                "departmentId": dept_id,
+                "startDate": start_date,
+                "endDate": end_date,
+                "budget": budget,
+                "riskLevelId": self._risk_level_to_id(risk_level),
+                "manager": manager,
+            }
+            await self.auditing_client.create_project(payload)
+            self._close_dialog(dialog)
+            await self._load_projects_async()
+            self.show_status(f"Project '{name}' added successfully")
+        except Exception as ex:
+            print(f"Error adding project: {ex}")
+            self.show_status(f"Error adding project: {str(ex)}", is_error=True)
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
 
     def edit_project(self, proj):
         # Create form fields
@@ -807,12 +754,13 @@ class ProjectsView(BaseView):
         status_dropdown = ft.Dropdown(
             label="Status",
             options=[
-                ft.dropdown.Option("Not Started"),
-                ft.dropdown.Option("In Progress"),
+                ft.dropdown.Option("Planning"),
+                ft.dropdown.Option("Active"),
                 ft.dropdown.Option("On Hold"),
                 ft.dropdown.Option("Completed"),
+                ft.dropdown.Option("Cancelled"),
             ],
-            value=proj["status"],
+            value=proj.get("status") or "Planning",
             width=200
         )
 
@@ -867,8 +815,7 @@ class ProjectsView(BaseView):
 
         # Define dialog close function
         def close_dialog(e):
-            dialog.open = False
-            self.page.update()
+            self._close_dialog(dialog)
 
         # Define update function
         def update_project(e):
@@ -917,95 +864,20 @@ class ProjectsView(BaseView):
                     self.show_status("Invalid budget amount", is_error=True)
                     return
 
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE projects
-                    SET name = %s, description = %s, status = %s, department_id = %s,
-                        start_date = %s, end_date = %s, budget = %s, risk_level = %s, manager = %s
-                    WHERE id = %s
-                """, (
-                    name_field.value,
-                    description_field.value,
-                    status_dropdown.value,
-                    dept_id,
-                    start_date,
-                    end_date,
-                    budget,
-                    risk_level_dropdown.value,
-                    manager_field.value,
-                    proj["id"]
-                ))
-                conn.commit()
-
-                # Get department name
-                department_name = "None"
-                if dept_id:
-                    cursor.execute("SELECT name FROM departments WHERE id = %s", (dept_id,))
-                    result = cursor.fetchone()
-                    if result:
-                        department_name = result[0]
-                    else:
-                        department_name = "Unknown"
-
-                cursor.close()
-                conn.close()
-
-                # API version (commented out)
-                # updated_proj = {
-                #     "id": proj["id"],
-                #     "name": name_field.value,
-                #     "description": description_field.value,
-                #     "status": status_dropdown.value,
-                #     "department_id": dept_id,
-                #     "start_date": start_date,
-                #     "end_date": end_date,
-                #     "budget": budget,
-                #     "risk_level": risk_level_dropdown.value,
-                #     "manager": manager_field.value
-                # }
-                # response = requests.put(f"{self.api_base_url}/projects/{proj['id']}", json=updated_proj)
-                # if response.status_code != 200:
-                #     raise Exception(f"API returned status {response.status_code}")
-                #
-                # # Get department name
-                # department_name = "None"
-                # if dept_id:
-                #     dept_response = requests.get(f"{self.api_base_url}/departments/{dept_id}")
-                #     if dept_response.status_code == 200:
-                #         department = dept_response.json()
-                #         department_name = department["name"]
-                #     else:
-                #         department_name = "Unknown"
-
-                # Update in local projects list
-                for p in self.projects:
-                    if p["id"] == proj["id"]:
-                        p["name"] = name_field.value
-                        p["description"] = description_field.value
-                        p["status"] = status_dropdown.value
-                        p["department_id"] = dept_id
-                        p["department_name"] = department_name
-                        p["start_date"] = start_date
-                        p["end_date"] = end_date
-                        p["budget"] = budget
-                        p["risk_level"] = risk_level_dropdown.value
-                        p["manager"] = manager_field.value
-                        break
-
-                # Update filtered projects
-                self.filter_projects(None)
-
-                # Close dialog
-                close_dialog(e)
-
-                # Show success message
-                self.show_status(f"Project '{name_field.value}' updated successfully")
-            except Exception as ex:
-                print(f"Error updating project: {ex}")
-                self.show_status(f"Error updating project: {str(ex)}", is_error=True)
+            self.page.run_task(
+                self._update_project_async,
+                dialog,
+                proj.get("id"),
+                name_field.value,
+                description_field.value,
+                status_dropdown.value,
+                dept_id,
+                start_date,
+                end_date,
+                budget,
+                risk_level_dropdown.value,
+                manager_field.value,
+            )
 
         # Create dialog
         dialog = ft.AlertDialog(
@@ -1039,47 +911,40 @@ class ProjectsView(BaseView):
         )
 
         # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
+
+    async def _update_project_async(self, dialog, project_id, name, description, status, dept_id, start_date, end_date, budget, risk_level, manager):
+        try:
+            payload = {
+                "id": project_id,
+                "name": name,
+                "description": description,
+                "statusId": self._status_to_id(status),
+                "departmentId": dept_id,
+                "startDate": start_date,
+                "endDate": end_date,
+                "budget": budget,
+                "riskLevelId": self._risk_level_to_id(risk_level),
+                "manager": manager,
+            }
+            await self.auditing_client.update_project(project_id, payload)
+            self._close_dialog(dialog)
+            await self._load_projects_async()
+            self.show_status(f"Project '{name}' updated successfully")
+        except Exception as ex:
+            print(f"Error updating project: {ex}")
+            self.show_status(f"Error updating project: {str(ex)}", is_error=True)
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
 
     def delete_project(self, proj):
         # Define dialog close function
         def close_dialog(e):
-            dialog.open = False
-            self.page.update()
+            self._close_dialog(dialog)
 
         # Define delete function
         def confirm_delete(e):
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM projects WHERE id = %s", (proj["id"],))
-                conn.commit()
-                cursor.close()
-                conn.close()
-
-                # API version (commented out)
-                # response = requests.delete(f"{self.api_base_url}/projects/{proj['id']}")
-                # if response.status_code != 204:
-                #     raise Exception(f"API returned status {response.status_code}")
-
-                # Remove from local lists
-                self.projects = [p for p in self.projects if p["id"] != proj["id"]]
-                self.filtered_projects = [p for p in self.filtered_projects if p["id"] != proj["id"]]
-
-                # Close dialog
-                close_dialog(e)
-
-                # Update project cards
-                self.update_project_cards()
-
-                # Show success message
-                self.show_status(f"Project '{proj['name']}' deleted successfully")
-            except Exception as ex:
-                print(f"Error deleting project: {ex}")
-                self.show_status(f"Error deleting project: {str(ex)}", is_error=True)
+            self.page.run_task(self._delete_project_async, dialog, proj.get("id"), proj.get("name", "Project"))
 
         # Create dialog with improved layout
         dialog = ft.AlertDialog(
@@ -1112,201 +977,49 @@ class ProjectsView(BaseView):
         )
 
         # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
 
-    def view_project_details(self, proj):
-        # Show loading indicator
-        self.loading_indicator.visible = True
-        self.update()
-
-        # Get colors
-        status_color = self.get_status_color(proj["status"])
-        risk_color = self.get_risk_color(proj["risk_level"])
-
-        # Format dates if they exist
-        start_date = proj.get("start_date", "Not set")
-        if start_date and not isinstance(start_date, str):
-            start_date = start_date.strftime("%Y-%m-%d")
-
-        end_date = proj.get("end_date", "Not set")
-        if end_date and not isinstance(end_date, str):
-            end_date = end_date.strftime("%Y-%m-%d")
-
-        # Format budget
-        budget = proj.get("budget")
-        budget_display = f"${budget:,.2f}" if budget else "Not set"
-
-        # Get assessments for this project - database version
-        project_assessments = []
+    async def _delete_project_async(self, dialog, project_id, project_name):
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("""
-                SELECT id, name, status, created_at 
-                FROM assessments 
-                WHERE project_id = %s 
-                ORDER BY created_at DESC LIMIT 3
-            """, (proj["id"],))
-            project_assessments = cursor.fetchall()
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            print(f"Error fetching project assessments: {e}")
-
-        # API version (commented out)
-        # try:
-        #     response = requests.get(f"{self.api_base_url}/projects/{proj['id']}/assessments")
-        #     if response.status_code == 200:
-        #         project_assessments = response.json()
-        #     else:
-        #         print(f"Error fetching project assessments: API returned status {response.status_code}")
-        # except Exception as e:
-        #     print(f"Error fetching project assessments: {e}")
-
-        # Create project details section with improved layout
-        details_section = ft.Column([
-            ft.Row([
-                ft.Text("Department:", size=14, weight=ft.FontWeight.BOLD, width=120),
-                ft.Text(proj.get("department_name", "None"), size=14)
-            ]),
-            ft.Divider(height=1),
-            ft.Row([
-                ft.Text("Manager:", size=14, weight=ft.FontWeight.BOLD, width=120),
-                ft.Text(proj.get("manager", "Not assigned"), size=14)
-            ]),
-            ft.Divider(height=1),
-            ft.Row([
-                ft.Text("Timeline:", size=14, weight=ft.FontWeight.BOLD, width=120),
-                ft.Text(f"{start_date} to {end_date}", size=14)
-            ]),
-            ft.Divider(height=1),
-            ft.Row([
-                ft.Text("Budget:", size=14, weight=ft.FontWeight.BOLD, width=120),
-                ft.Text(budget_display, size=14)
-            ]),
-            ft.Divider(height=1),
-            ft.Container(height=10),
-            ft.Text("Description:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Container(
-                content=ft.Text(proj.get("description", "No description provided."), size=14),
-                padding=15,
-                bgcolor="#f5f5f5",
-                border_radius=5,
-                width=400
-            ),
-        ])
-
-        # Create status indicators with improved styling
-        status_section = ft.Row([
-            ft.Container(
-                padding=15,
-                border_radius=10,
-                bgcolor=None,
-                border=ft.border.all(1, "#EEEEEE"),
-                content=ft.Column([
-                    ft.Container(
-                        content=ft.Text(proj["status"], color="white", size=16, weight=ft.FontWeight.BOLD),
-                        bgcolor=status_color,
-                        border_radius=15,
-                        padding=ft.padding.only(left=15, right=15, top=8, bottom=8),
-                        alignment=ft.alignment.center
-                    ),
-                    ft.Container(height=8),
-                    ft.Text("Status", size=14, color="#666666"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                width=140,
-            ),
-            ft.Container(width=20),
-            ft.Container(
-                padding=15,
-                border_radius=10,
-                bgcolor=None,
-                border=ft.border.all(1, "#EEEEEE"),
-                content=ft.Column([
-                    ft.Container(
-                        content=ft.Text(proj["risk_level"], color="white", size=16, weight=ft.FontWeight.BOLD),
-                        bgcolor=risk_color,
-                        border_radius=15,
-                        padding=ft.padding.only(left=15, right=15, top=8, bottom=8),
-                        alignment=ft.alignment.center
-                    ),
-                    ft.Container(height=8),
-                    ft.Text("Risk Level", size=14, color="#666666"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                width=140,
-            ),
-        ], alignment=ft.MainAxisAlignment.CENTER)
-
-        # Create assessments section if available
-        assessments_section = ft.Column([
-            ft.Text("No assessments found for this project", size=14, color="#666666", italic=True)
-        ])
-
-        if project_assessments:
-            assessments_section = ft.Column([
-                ft.Text("Recent Assessments", size=16, weight=ft.FontWeight.BOLD),
-                ft.Container(height=10),
-                ft.Column([
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Container(
-                            width=16,
-                            height=16,
-                            bgcolor="#3498db",
-                            border_radius=8,
-                            alignment=ft.alignment.center,
-                            content=ft.Text("A", color="white", size=10, weight=ft.FontWeight.BOLD)
-                        ),
-                            ft.Column([
-                                ft.Text(a["name"], size=14, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"Status: {a['status']}", size=12, color="#666666")
-                            ])
-                        ]),
-                        padding=10,
-                        margin=5,
-                        border_radius=5,
-                        bgcolor="#f5f5f5"
-                    ) for a in project_assessments
-                ])
-            ])
-
-        # Hide loading indicator
-        self.loading_indicator.visible = False
-        self.update()
-
-        # Define dialog close function
-        def close_dialog(e):
-            dialog.open = False
+            await self.auditing_client.delete_project(project_id)
+            self._close_dialog(dialog)
+            await self._load_projects_async()
+            self.show_status(f"Project '{project_name}' deleted successfully")
+        except Exception as ex:
+            print(f"Error deleting project: {ex}")
+            self.show_status(f"Error deleting project: {str(ex)}", is_error=True)
+        if hasattr(self, 'page') and self.page:
             self.page.update()
 
-        # Create dialog with improved layout
+    def view_project_details(self, proj):
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        status_color = self.get_status_color(proj.get("status"))
+        risk_color = self.get_risk_color(proj.get("risk_level"))
+
+        start_date = proj.get("start_date") or "-"
+        end_date = proj.get("end_date") or "-"
+        timeline = f"{start_date} - {end_date}"
+
         dialog = ft.AlertDialog(
-            title=ft.Text(f"Project Details: {proj['name']}", size=20),
+            title=ft.Text(f"Project: {proj.get('name', '-')}", size=20),
             content=ft.Column([
-                status_section,
-                ft.Container(height=30),
-                details_section,
-                ft.Container(height=20),
-                assessments_section
-            ], height=500, scroll=ft.ScrollMode.AUTO),
+                ft.Row([ft.Text("Status:", weight=ft.FontWeight.BOLD), ft.Text(str(proj.get("status", "-")), color=status_color)]),
+                ft.Row([ft.Text("Risk Level:", weight=ft.FontWeight.BOLD), ft.Text(str(proj.get("risk_level", "-")), color=risk_color)]),
+                ft.Row([ft.Text("Department:", weight=ft.FontWeight.BOLD), ft.Text(str(proj.get("department_name", "-")))]),
+                ft.Row([ft.Text("Manager:", weight=ft.FontWeight.BOLD), ft.Text(str(proj.get("manager", "-")))]),
+                ft.Row([ft.Text("Timeline:", weight=ft.FontWeight.BOLD), ft.Text(timeline)]),
+                ft.Row([ft.Text("Budget:", weight=ft.FontWeight.BOLD), ft.Text(str(proj.get("budget", "-")))]),
+                ft.Divider(),
+                ft.Text("Description:", weight=ft.FontWeight.BOLD),
+                ft.Text(str(proj.get("description", "")) or "-", color=colors.text_primary),
+            ], height=420, scroll=ft.ScrollMode.AUTO),
             actions=[
-                ft.TextButton("Close", on_click=close_dialog),
-                ft.ElevatedButton(
-                    "Edit Project",
-                    on_click=lambda e: (close_dialog(e), self.edit_project(proj)),
-                    bgcolor="#3498db",
-                    color="white",
-                ),
+                ft.TextButton("Close", on_click=lambda e: self._close_dialog(dialog)),
+                ft.ElevatedButton("Edit", on_click=lambda e: (self._close_dialog(dialog), self.edit_project(proj))),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-
-        # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
 
     def show_status(self, message, is_error=False):
         # Set message color and background
@@ -1344,10 +1057,12 @@ class ProjectsView(BaseView):
         # Return color based on status
         if status == "Completed":
             return "#2ecc71"  # Green
-        elif status == "In Progress":
+        elif status == "Active":
             return "#3498db"  # Blue
         elif status == "On Hold":
             return "#f39c12"  # Orange
+        elif status == "Cancelled":
+            return "#e74c3c"  # Red
         else:  # Not Started
             return "#95a5a6"  # Gray
 

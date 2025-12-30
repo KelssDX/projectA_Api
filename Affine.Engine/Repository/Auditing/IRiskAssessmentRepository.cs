@@ -31,13 +31,21 @@ namespace Affine.Engine.Repository.Auditing
         // Get all assessments
         Task<IEnumerable<object>> GetAssessmentsAsync();
 
+        // Departments CRUD
+        Task<Affine.Engine.Model.Auditing.Department> CreateDepartmentAsync(Affine.Engine.Model.Auditing.Department department);
+        Task<Affine.Engine.Model.Auditing.Department> UpdateDepartmentAsync(Affine.Engine.Model.Auditing.Department department);
+        Task<bool> DeleteDepartmentAsync(int departmentId);
+
+        // Projects CRUD
+        Task<Affine.Engine.Model.Auditing.Project> CreateProjectAsync(Affine.Engine.Model.Auditing.Project project);
+        Task<Affine.Engine.Model.Auditing.Project> UpdateProjectAsync(Affine.Engine.Model.Auditing.Project project);
+        Task<bool> DeleteProjectAsync(int projectId);
+
         //Risk Assessment Operations
         Task<bool> AddRiskAssessmentAsync(List<RiskAssessmentCreateRequest> requests, RiskAssessmentReferenceInput reference, int? referenceId = null);
         Task<bool> UpdateRiskAssessmentsAsync(List<RiskAssessmentUpdateRequest> updates, int referenceId);
         Task<bool> DeleteRiskAssessmentAsync(int riskAssessmentId, int referenceId);
         Task<int> AddRiskAssessmentReferenceAsync(RiskAssessmentReferenceInput reference);
         Task<bool> UpdateRiskAssessmentReferenceAsync(int referenceId, RiskAssessmentReferenceInput reference);
-
-        // (CRUD endpoints for departments/projects can be added here when backend supports them)
     }
 }

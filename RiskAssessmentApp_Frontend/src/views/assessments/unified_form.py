@@ -1658,7 +1658,7 @@ class UnifiedAssessmentForm(BaseView):
                     width=28,
                     height=28,
                 )
-                
+
                 action_buttons = ft.Row([edit_btn, delete_btn], spacing=2, visible=show_actions)
 
                 rows.append(
@@ -1860,9 +1860,9 @@ class UnifiedAssessmentForm(BaseView):
                 self.page.update()
         except Exception as ex:
             print(f"DEBUG: Error opening modal: {ex}")
-            self.page.dialog = self.item_dialog
-            self.item_dialog.open = True
-            self.page.update()
+        self.page.dialog = self.item_dialog
+        self.item_dialog.open = True
+        self.page.update()
 
     def _update_item_field(self, index, field_name, new_value):
         if self.mode == "view":
@@ -2245,7 +2245,7 @@ class UnifiedAssessmentForm(BaseView):
                 else:
                     success_message = "Assessment saved successfully!" if scope == "all" else "Risk item saved successfully!"
                     print(f"DEBUG: Save successful - {success_message}")
-                    self._show_success(success_message)
+                self._show_success(success_message)
                 
                 if self.mode == "edit" and self.reference_id:
                     try:

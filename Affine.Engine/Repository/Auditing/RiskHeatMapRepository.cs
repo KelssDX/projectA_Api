@@ -28,17 +28,17 @@ namespace Affine.Engine.Repository.Auditing
     {
         // Query to aggregate risks by likelihood and impact
                 var heatmapQuery = new StringBuilder();
-                // Align with actual table names used by the RA schema (RA_RiskLikelihood/RA_RiskImpact)
+                // Use correct schema and column names (snake_case as per database)
                 heatmapQuery.Append(@"SELECT rl.description AS Likelihood, ri.description AS Impact, COUNT(*) AS Count
-                                     FROM RiskAssessment ra
-                                     INNER JOIN RA_RiskLikelihood rl ON ra.RiskLikelihoodId = rl.Id
-                                     INNER JOIN RA_RiskImpact ri ON ra.RiskImpactId = ri.Id
-                                     WHERE ra.ReferenceId = @ReferenceId");
+                                     FROM ""Risk_Assess_Framework"".riskassessment ra
+                                     INNER JOIN public.ra_risklikelihood rl ON ra.risklikelihoodid = rl.id
+                                     INNER JOIN ""Risk_Assess_Framework"".ra_riskimpact ri ON ra.riskimpactid = ri.id
+                                     WHERE ra.reference_id = @ReferenceId");
                 if (departmentId.HasValue)
                 {
-                    heatmapQuery.Append(" AND ra.DepartmentId = @DepartmentId");
+                    heatmapQuery.Append(" AND ra.department_id = @DepartmentId");
                 }
-                heatmapQuery.Append(" GROUP BY rl.Name, ri.Name");
+                heatmapQuery.Append(" GROUP BY rl.description, ri.description");
 
                 var heatmapData = await dbConnection.QueryAsync<HeatmapData>(heatmapQuery.ToString(), new { ReferenceId = referenceId, DepartmentId = departmentId });
 

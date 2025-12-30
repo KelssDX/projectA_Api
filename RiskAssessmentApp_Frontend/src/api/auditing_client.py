@@ -403,6 +403,96 @@ class AuditingAPIClient:
 
         except aiohttp.ClientError as e:
             raise Exception(f"Connection error: {str(e)}")
+
+    async def create_department(self, department_data):
+        """Create a department"""
+        await self._ensure_session()
+        url = get_auditing_api_url("create_department")
+
+        try:
+            async with self.session.post(url, json=department_data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to create department: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def update_department(self, department_id, department_data):
+        """Update a department"""
+        await self._ensure_session()
+        url = get_auditing_api_url("update_department") + f"/{department_id}"
+
+        try:
+            async with self.session.put(url, json=department_data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to update department: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def delete_department(self, department_id):
+        """Delete a department"""
+        await self._ensure_session()
+        url = get_auditing_api_url("delete_department") + f"/{department_id}"
+
+        try:
+            async with self.session.delete(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to delete department: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def create_project(self, project_data):
+        """Create a project"""
+        await self._ensure_session()
+        url = get_auditing_api_url("create_project")
+
+        try:
+            async with self.session.post(url, json=project_data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to create project: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def update_project(self, project_id, project_data):
+        """Update a project"""
+        await self._ensure_session()
+        url = get_auditing_api_url("update_project") + f"/{project_id}"
+
+        try:
+            async with self.session.put(url, json=project_data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to update project: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def delete_project(self, project_id):
+        """Delete a project"""
+        await self._ensure_session()
+        url = get_auditing_api_url("delete_project") + f"/{project_id}"
+
+        try:
+            async with self.session.delete(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to delete project: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
     
     async def get_data_frequencies(self):
         """Get all data frequencies"""

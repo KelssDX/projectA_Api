@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+description: ALways check for indentatons before even trying to run or telling me that you done. Make sure the changes you did have no errors and will run.
+---

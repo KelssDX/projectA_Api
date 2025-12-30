@@ -1,621 +1,594 @@
 import flet as ft
+from flet import Icons
 import asyncio
-from datetime import datetime
+from src.utils.theme import (
+    get_theme_colors,
+    create_modern_button,
+    create_modern_card,
+    apply_theme_to_control,
+)
+from src.views.common.base_view import BaseView
 from src.controllers.assessment_controller import AssessmentController
-from src.views.assessment.modern_form import ModernAssessmentForm
-from src.utils.formatters import format_date, format_risk_score
-import json
 
 
-class ModernHeatmapDashboard(ft.Container):
-    def __init__(self, page, user, on_assessment_created=None):
-        super().__init__()
+class ModernHeatmapDashboard(BaseView):
+    def __init__(self, page, user, reference_id=None, on_navigate=None):
         self.page = page
         self.user = user
-        self.on_assessment_created = on_assessment_created
-        self.expand = True
-        
-        # Controllers
+        self.reference_id = reference_id
+        self.on_navigate = on_navigate
         self.assessment_controller = AssessmentController()
+        self.heatmap_data = None
+        self.enabled_levels = {"Critical": True, "High": True, "Medium": True, "Low": True, "Very Low": True}
         
-        # State management
-        self.heatmap_data = {}
-        self.selected_reference_id = 1
-        self.view_mode = "combined"  # combined, split, overlay
-        self.filter_settings = {
-            "department": "All",
-            "time_period": "current",
-            "assessment_type": "all"
-        }
-        self.is_real_time = True
-        self.comparison_mode = False
-        self.comparison_data = {}
+        # Data storage
+        self.all_assessments = []
+        self.filtered_assessments = []
+        self.all_departments = []
+        self.all_assessors = []
         
-        # UI Components
-        self.heatmap_container = None
-        self.side_panel = None
-        self.assessment_form = None
-        self.quick_stats = None
-        self.selected_cell_info = None
+        # Resizable panel flex values
+        self.left_flex = 1
+        self.center_flex = 4
+        self.right_flex = 1
         
-        # Animation state
-        self.animation_enabled = True
-        self.last_update = datetime.now()
+        # Theme colors
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
         
-        # Initialize dashboard
-        self._init_dashboard()
-    
-    def _init_dashboard(self):
-        """Initialize the dashboard"""
+        # Search Components
+        self.header_search = ft.TextField(
+            label="Search Assessment",
+            width=300,
+            hint_text="Title, Ref ID, Assessor...",
+            prefix_icon=Icons.SEARCH,
+            on_change=self._on_search_change,
+            on_submit=self._on_search_submit,
+            cursor_color=colors.text_primary,
+            border_radius=8,
+            text_size=14,
+            height=45,
+            content_padding=ft.padding.only(left=10, right=10, bottom=5)
+        )
+        
+        # Suggestions container (hidden by default)
+        self.suggestions_card = ft.Card(
+            visible=False,
+            elevation=5,
+            content=ft.Container(
+                bgcolor=colors.surface,
+                padding=10,
+                border_radius=8,
+                width=350,
+                content=ft.Column([], spacing=5, scroll=ft.ScrollMode.AUTO, height=200)
+            )
+        )
+        
+        self.selected_assessment_text = ft.Text(
+            "No Assessment Selected", 
+            size=16, 
+            weight=ft.FontWeight.BOLD,
+            color=colors.text_primary
+        )
+
+        # Filters
+        self.department_filter = ft.Dropdown(
+            label="Department",
+            width=150,
+            value="All",
+            options=[ft.dropdown.Option("All")],
+            on_change=self._apply_filters,
+            text_size=14
+        )
+        
+        self.assessor_filter = ft.Dropdown(
+            label="Assessor",
+            width=150,
+            value="All",
+            options=[ft.dropdown.Option("All")],
+            on_change=self._apply_filters,
+            text_size=14
+        )
+        
+        # Header actions
+        actions = [
+            self.header_search,
+            self.department_filter,
+            self.assessor_filter,
+            create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=self._on_refresh_click, style="secondary", height=45),
+        ]
+        
+        super().__init__(page, "Risk Heatmap", actions=actions, colors=colors)
+        
+        # Container for suggestions that appears at top of content
+        self.suggestions_container = ft.Container(
+            visible=False,
+            padding=ft.padding.only(left=20),
+            content=self.suggestions_card
+        )
+        
         self._build_ui()
-        asyncio.create_task(self._load_initial_data())
-        
-        # Set up real-time updates if enabled
-        if self.is_real_time:
-            asyncio.create_task(self._start_real_time_updates())
-    
-    async def _load_initial_data(self):
-        """Load initial heatmap and assessment data"""
+
+    def load_data(self):
+        """Load data when view is shown"""
+        if hasattr(self, 'page') and self.page:
+            self.page.run_task(self._load_all_data)
+
+    async def _load_all_data(self):
+        """Load assessments and departments from API"""
         try:
-            self._show_loading_state()
+            # Load assessments and departments in parallel
+            assessments_task = self.assessment_controller.auditing_client.get_assessments()
+            departments_task = self.assessment_controller.auditing_client.get_departments()
             
-            # Load multiple reference IDs for comprehensive view
-            reference_ids = [1, 2, 3, 4, 5]
-            tasks = [self.assessment_controller.get_heatmap_data(ref_id) for ref_id in reference_ids]
+            results = await asyncio.gather(assessments_task, departments_task, return_exceptions=True)
             
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Process assessments
+            if not isinstance(results[0], Exception):
+                self.all_assessments = results[0] or []
+                self.filtered_assessments = self.all_assessments.copy()
+                
+                # Extract unique assessors
+                assessors = set()
+                for a in self.all_assessments:
+                    assessor = a.get('auditor') or a.get('assessor', '')
+                    if assessor:
+                        assessors.add(assessor)
+                self.all_assessors = sorted(list(assessors))
+                
+                self._update_assessor_filter()
             
-            # Process and combine heatmap data
-            self.heatmap_data = self._process_heatmap_results(results, reference_ids)
+            # Process departments
+            if not isinstance(results[1], Exception):
+                self.all_departments = results[1] or []
+                self._update_department_filter()
             
-            # Update UI with loaded data
-            self._update_heatmap_display()
-            self._update_quick_stats()
+            # If reference_id passed in init, load it
+            if self.reference_id:
+                await self._load_heatmap_data()
+                # Update selected text
+                found = next((a for a in self.all_assessments if (a.get('reference_id') or a.get('id')) == self.reference_id), None)
+                if found:
+                    self.selected_assessment_text.value = f"Selected: {found.get('title', 'Unknown')} (Ref: {self.reference_id})"
+
+            if self.page:
+                self.page.update()
+                
+        except Exception as e:
+            print(f"Error loading data: {e}")
+
+    async def _load_heatmap_data(self):
+        """Load heatmap data for selected assessment"""
+        if not self.reference_id:
+            self.heatmap_data = None
+            self.selected_assessment_text.value = "No Assessment Selected"
+            self._update_heatmap_ui()
+            return
+            
+        try:
+            # Find assessment details for display
+            assessment = next((a for a in self.all_assessments if (a.get('reference_id') or a.get('id')) == self.reference_id), None)
+            if assessment:
+                title = assessment.get('title') or "Untitled"
+                ref = assessment.get('reference_id') or assessment.get('id')
+                self.selected_assessment_text.value = f"Selected: {title} (Ref: {ref})"
+            
+            self.heatmap_data = await self.assessment_controller.get_heatmap_data(self.reference_id)
+            self._update_heatmap_ui()
             
         except Exception as e:
-            self._show_error(f"Error loading heatmap data: {str(e)}")
-        finally:
-            self._hide_loading_state()
-    
-    def _build_ui(self):
-        """Build the main dashboard UI"""
-        # Main header with controls
-        header = self._build_dashboard_header()
+            print(f"Error loading heatmap data: {e}")
+            self.heatmap_data = None
+            self._update_heatmap_ui()
+
+    def _update_heatmap_ui(self):
+        """Update just the heatmap grid area"""
+        # Re-create the heatmap grid
+        grid = self.create_heatmap_grid()
+        # Find the heatmap card in UI structure and update content
+        # Structure: _main_content_container -> Row -> Center Col -> Heatmap Card
+        # Easier to just rebuild UI since it's fast enough in Flet
+        self._build_ui()
+        if self.page:
+            self.page.update()
+
+    def _update_department_filter(self):
+        """Update department filter dropdown"""
+        self.department_filter.options = [ft.dropdown.Option("All")]
+        for dept in self.all_departments:
+            name = dept.get('name', '')
+            if name:
+                self.department_filter.options.append(ft.dropdown.Option(name))
+
+    def _update_assessor_filter(self):
+        """Update assessor filter dropdown"""
+        self.assessor_filter.options = [ft.dropdown.Option("All")]
+        for assessor in self.all_assessors:
+            self.assessor_filter.options.append(ft.dropdown.Option(assessor))
+
+    def _on_search_change(self, e):
+        """Handle search text change - show suggestions"""
+        search_term = (self.header_search.value or "").lower().strip()
         
-        # Main content area based on view mode
-        main_content = self._build_main_content()
-        
-        # Layout
-        self.content = ft.Column([
-            header,
-            ft.Divider(height=1, color="#e6e9ed"),
-            main_content
-        ], spacing=0, expand=True)
-    
-    def _build_dashboard_header(self):
-        """Build the dashboard header with controls and filters"""
-        return ft.Container(
-            height=80,
-            bgcolor=None,
-            padding=ft.padding.symmetric(horizontal=30, vertical=15),
-            content=ft.Row([
-                # Title and mode selector
-                ft.Column([
-                    ft.Text(
-                        "Risk Heatmap Dashboard",
-                        size=20,
-                        weight=ft.FontWeight.BOLD,
-                        color="#2c3e50"
-                    ),
-                    ft.Row([
-                        ft.Text("Live Risk Intelligence", size=12, color="#7f8c8d"),
-                        ft.Container(
-                            width=8,
-                            height=8,
-                            bgcolor="#2ecc71" if self.is_real_time else "#95a5a6",
-                            border_radius=4,
-                            margin=ft.margin.only(left=8)
-                        )
-                    ])
-                ], spacing=2),
-                
-                ft.Container(expand=True),
-                
-                # View mode controls
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("View:", size=14, weight=ft.FontWeight.BOLD, color="#2c3e50"),
-                        ft.SegmentedButton(
-                            selected={"combined"},
-                            allow_empty_selection=False,
-                            allow_multiple_selection=False,
-                            segments=[
-                                ft.Segment(
-                                    value="combined",
-                                    label=ft.Text("Combined"),
-                                    icon=ft.Icon(ft.icons.DASHBOARD)
-                                ),
-                                ft.Segment(
-                                    value="split",
-                                    label=ft.Text("Split"),
-                                    icon=ft.Icon(ft.icons.VIEW_COLUMN)
-                                ),
-                                ft.Segment(
-                                    value="overlay",
-                                    label=ft.Text("Overlay"),
-                                    icon=ft.Icon(ft.icons.LAYERS)
-                                )
-                            ],
-                            on_change=self._on_view_mode_change
-                        )
-                    ], spacing=10)
-                ),
-                
-                ft.Container(width=20),
-                
-                # Action buttons
-                ft.Row([
-                    ft.ElevatedButton(
-                        text="New Assessment",
-                        icon=ft.icons.ADD_CIRCLE,
-                        bgcolor="#2ecc71",
-                        color="white",
-                        on_click=self._create_new_assessment,
-                        tooltip="Create new risk assessment"
-                    ),
-                    ft.Container(width=10),
-                    ft.PopupMenuButton(
-                        items=[
-                            ft.PopupMenuItem(
-                                text="Compare Scenarios",
-                                icon=ft.icons.COMPARE,
-                                on_click=self._toggle_comparison_mode
-                            ),
-                            ft.PopupMenuItem(
-                                text="Export Heatmap",
-                                icon=ft.icons.DOWNLOAD,
-                                on_click=self._export_heatmap
-                            ),
-                            ft.PopupMenuItem(
-                                text="Settings",
-                                icon=ft.icons.SETTINGS,
-                                on_click=self._show_settings
-                            ),
-                            ft.PopupMenuItem(),  # Divider
-                            ft.PopupMenuItem(
-                                text="Toggle Real-time",
-                                icon=ft.icons.SYNC if self.is_real_time else ft.icons.SYNC_DISABLED,
-                                on_click=self._toggle_real_time
-                            )
-                        ],
-                        icon=ft.icons.MORE_VERT,
-                        tooltip="More options"
+        if not search_term:
+            self.suggestions_container.visible = False
+            if self.page:
+                self.page.update()
+            return
+
+        # Simple filter for suggestions
+        matches = [
+            a for a in self.all_assessments
+            if search_term in (a.get('title') or '').lower()
+            or search_term in str(a.get('reference_id', ''))
+        ][:5] # Top 5
+
+        if matches:
+            content_col = self.suggestions_card.content.content
+            content_col.controls.clear()
+            content_col.controls.append(ft.Text("Top Matches:", size=12, color=self.colors.text_secondary))
+            
+            for m in matches:
+                ref_id = m.get('reference_id') or m.get('id')
+                title = m.get('title', 'Untitled')
+                content_col.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(Icons.ASSESSMENT_OUTLINED, size=16),
+                            ft.Text(f"{title} (#{ref_id})", size=14, weight=ft.FontWeight.W_500, expand=True),
+                            ft.Icon(Icons.ARROW_FORWARD_IOS, size=12, color=self.colors.text_secondary)
+                        ]),
+                        padding=10,
+                        border_radius=4,
+                        ink=True,
+                        on_click=lambda e, r=ref_id: self._select_assessment_from_search(r),
+                        bgcolor=ft.colors.with_opacity(0.05, self.colors.primary) if hasattr(ft, 'colors') else "#f0f0f0"
                     )
-                ])
-            ])
-        )
-    
-    def _build_main_content(self):
-        """Build main content based on view mode"""
-        if self.view_mode == "combined":
-            return self._build_combined_view()
-        elif self.view_mode == "split":
-            return self._build_split_view()
-        elif self.view_mode == "overlay":
-            return self._build_overlay_view()
+                )
+            
+            content_col.controls.append(ft.Divider())
+            content_col.controls.append(
+                ft.TextButton(
+                    "View All Results", 
+                    icon=Icons.LIST, 
+                    on_click=lambda e: self._show_search_results_dialog(search_term)
+                )
+            )
+            
+            self.suggestions_container.visible = True
         else:
-            return self._build_combined_view()
-    
-    def _build_combined_view(self):
-        """Build combined dashboard view"""
-        return ft.Container(
-            expand=True,
-            content=ft.Row([
-                # Main heatmap area
-                ft.Column([
-                    self._build_heatmap_controls(),
-                    self._build_interactive_heatmap(),
-                    self._build_quick_stats_bar()
-                ], expand=3),
-                
-                ft.Container(width=1, bgcolor="#e6e9ed"),
-                
-                # Side panel for details and quick actions
-                ft.Column([
-                    self._build_side_panel()
-                ], expand=1, scroll=ft.ScrollMode.AUTO)
-            ])
+            self.suggestions_container.visible = False
+            
+        if self.page:
+            self.page.update()
+
+    def _on_search_submit(self, e):
+        """Handle Enter key in search"""
+        search_term = self.header_search.value
+        if search_term:
+            self.suggestions_container.visible = False
+            self._show_search_results_dialog(search_term)
+
+    def _select_assessment_from_search(self, ref_id):
+        """Handle selection from suggestion"""
+        self.suggestions_container.visible = False
+        self.reference_id = int(ref_id)
+        self.header_search.value = "" # Clear search
+        if self.page:
+            self.page.run_task(self._load_heatmap_data)
+
+    def _show_search_results_dialog(self, search_term):
+        """Show full paginated search results"""
+        search_term = search_term.lower().strip()
+        
+        # Filter all matching
+        matches = [
+            a for a in self.all_assessments
+            if search_term in (a.get('title') or '').lower()
+            or search_term in str(a.get('reference_id', ''))
+            or search_term in (a.get('auditor') or a.get('assessor') or '').lower()
+            or search_term in (a.get('department') or '').lower()
+        ]
+
+        # Pagination logic
+        page_size = 5
+        current_page = [1] # Mutable list to hold state in closure
+        total_pages = (len(matches) + page_size - 1) // page_size or 1
+
+        results_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=300)
+        page_text = ft.Text(f"Page 1 of {total_pages}")
+        
+        # Define handlers before using them
+        def next_page(e):
+            if current_page[0] < total_pages:
+                current_page[0] += 1
+                render_page()
+
+        def prev_page(e):
+            if current_page[0] > 1:
+                current_page[0] -= 1
+                render_page()
+
+        prev_btn = ft.IconButton(Icons.ARROW_BACK, on_click=prev_page)
+        next_btn = ft.IconButton(Icons.ARROW_FORWARD, on_click=next_page)
+        
+        # Create dialog first so it's available in closure
+        dialog = ft.AlertDialog(
+            title=ft.Text(f"Search Results: '{search_term}' ({len(matches)} found)"),
+            content=ft.Column([
+                results_list,
+                ft.Row([prev_btn, page_text, next_btn], alignment=ft.MainAxisAlignment.CENTER)
+            ], height=400, width=500),
+            actions=[ft.TextButton("Close", on_click=lambda e: self.page.close(dialog))]
         )
-    
-    def _build_split_view(self):
-        """Build split view with heatmap and form side by side"""
-        return ft.Container(
-            expand=True,
-            content=ft.Row([
-                # Left: Heatmap
-                ft.Column([
-                    self._build_heatmap_controls(),
-                    self._build_interactive_heatmap(),
-                    self._build_quick_stats_bar()
-                ], expand=1),
-                
-                ft.Container(width=2, bgcolor="#34495e"),
-                
-                # Right: Assessment form or details
-                ft.Column([
-                    self._build_form_panel()
-                ], expand=1, scroll=ft.ScrollMode.AUTO)
-            ])
-        )
-    
-    def _build_overlay_view(self):
-        """Build overlay view with floating panels"""
-        return ft.Container(
-            expand=True,
-            content=ft.Stack([
-                # Main heatmap (full screen)
-                ft.Column([
-                    self._build_heatmap_controls(),
-                    self._build_interactive_heatmap(),
-                    self._build_quick_stats_bar()
-                ]),
-                
-                # Floating side panel
-                ft.Positioned(
-                    right=20,
-                    top=20,
-                    bottom=20,
-                    width=350,
-                    child=ft.Card(
-                        elevation=8,
-                        content=ft.Container(
-                            padding=15,
-                            content=self._build_side_panel(),
-                            bgcolor="white",
-                            border_radius=10
+
+        def select_and_close(ref_id):
+            self.reference_id = int(ref_id)
+            self.header_search.value = ""
+            if self.page:
+                self.page.close(dialog)
+                self.page.run_task(self._load_heatmap_data)
+
+        def render_page():
+            start = (current_page[0] - 1) * page_size
+            end = start + page_size
+            page_items = matches[start:end]
+            
+            results_list.controls.clear()
+            if not page_items:
+                results_list.controls.append(ft.Text("No assessments found matching your query."))
+            else:
+                for item in page_items:
+                    ref_id = item.get('reference_id') or item.get('id')
+                    title = item.get('title', 'Untitled')
+                    dept = item.get('department', 'N/A')
+                    assessor = item.get('auditor') or item.get('assessor', 'N/A')
+                    date = item.get('assessment_date', '').split('T')[0] if item.get('assessment_date') else 'N/A'
+                    
+                    results_list.controls.append(
+                        ft.Container(
+                            padding=10,
+                            border=ft.border.all(1, self.colors.border),
+                            border_radius=8,
+                            content=ft.Row([
+                                ft.Column([
+                                    ft.Text(title, weight=ft.FontWeight.BOLD),
+                                    ft.Text(f"Ref: {ref_id} | Dept: {dept}", size=12, color=self.colors.text_secondary),
+                                    ft.Text(f"Assessor: {assessor} | Date: {date}", size=12, color=self.colors.text_secondary),
+                                ], expand=True),
+                                ft.ElevatedButton(
+                                    "Select", 
+                                    icon=Icons.CHECK,
+                                    on_click=lambda e, r=ref_id: select_and_close(r)
+                                )
+                            ])
                         )
                     )
-                )
-            ])
+            
+            page_text.value = f"Page {current_page[0]} of {total_pages}"
+            prev_btn.disabled = current_page[0] <= 1
+            next_btn.disabled = current_page[0] >= total_pages
+            # Only update if dialog is actually open, avoid race conditions or errors if called before open
+            if dialog.open:
+                dialog.update()
+
+        # Render initial page before opening to ensure content is ready
+        render_page()
+        self.page.open(dialog)
+
+    def _apply_filters(self, e=None):
+        """Apply department/assessor filters"""
+        # This is for a list view, but in Heatmap we select ONE assessment.
+        # These filters could filter the suggestions or be removed. 
+        # For now, let's make them filter the 'all_assessments' list used for search?
+        # Or better: Provide a "Filter & Select" dialog.
+        # Given the instruction "search ... using the assessment name or reference id", 
+        # these dropdowns might be secondary. Let's keep them functional if user wants to browse.
+        pass # Search is primary now.
+
+    def _on_refresh_click(self, e):
+        """Handle refresh button click"""
+        self.load_data()
+
+    def _build_ui(self):
+        """Build the UI components"""
+        colors = self.colors
+
+        # Left panel - Display settings only
+        filter_panel = create_modern_card(
+            colors,
+            ft.Column([
+                ft.Text("Display Settings", size=16, weight=ft.FontWeight.BOLD, color=colors.text_primary),
+                ft.Divider(height=1, color=colors.border),
+                ft.Container(height=10),
+                ft.Text("Risk Levels", size=13, weight=ft.FontWeight.W_500, color=colors.text_secondary),
+                ft.Container(height=5),
+                ft.Checkbox(label="Critical", value=self.enabled_levels.get("Critical", True), 
+                           on_change=lambda e: self._on_level_checkbox_change("Critical", e),
+                           check_color="#8B0000", active_color="#8B0000"),
+                ft.Checkbox(label="High", value=self.enabled_levels.get("High", True), 
+                           on_change=lambda e: self._on_level_checkbox_change("High", e),
+                           check_color="#e74c3c", active_color="#e74c3c"),
+                ft.Checkbox(label="Medium", value=self.enabled_levels.get("Medium", True), 
+                           on_change=lambda e: self._on_level_checkbox_change("Medium", e),
+                           check_color="#f39c12", active_color="#f39c12"),
+                ft.Checkbox(label="Low", value=self.enabled_levels.get("Low", True), 
+                           on_change=lambda e: self._on_level_checkbox_change("Low", e),
+                           check_color="#2ecc71", active_color="#2ecc71"),
+                ft.Checkbox(label="Very Low", value=self.enabled_levels.get("Very Low", True), 
+                           on_change=lambda e: self._on_level_checkbox_change("Very Low", e),
+                           check_color="#27ae60", active_color="#27ae60"),
+                ft.Container(height=20),
+                ft.ElevatedButton(
+                    text="Export Heatmap", 
+                    icon=Icons.DOWNLOAD, 
+                    on_click=self.export_heatmap,
+                    width=200
+                ),
+            ], scroll=ft.ScrollMode.AUTO, spacing=5),
+            padding=ft.padding.all(16)
         )
-    
-    def _build_heatmap_controls(self):
-        """Build heatmap filter and control panel"""
-        return ft.Container(
-            height=60,
-            bgcolor=None,
-            padding=ft.padding.symmetric(horizontal=20, vertical=10),
-            content=ft.Row([
-                # Filters
-                ft.Row([
-                    ft.Text("Filters:", weight=ft.FontWeight.BOLD, color="#2c3e50"),
-                    ft.Dropdown(
-                        label="Department",
-                        width=150,
-                        value=self.filter_settings["department"],
-                        options=[
-                            ft.dropdown.Option("All"),
-                            ft.dropdown.Option("IT"),
-                            ft.dropdown.Option("Finance"),
-                            ft.dropdown.Option("Operations"),
-                            ft.dropdown.Option("Legal"),
-                            ft.dropdown.Option("HR")
-                        ],
-                        on_change=self._on_filter_change
-                    ),
-                    ft.Dropdown(
-                        label="Time Period",
-                        width=120,
-                        value=self.filter_settings["time_period"],
-                        options=[
-                            ft.dropdown.Option("current", "Current"),
-                            ft.dropdown.Option("monthly", "Monthly"),
-                            ft.dropdown.Option("quarterly", "Quarterly"),
-                            ft.dropdown.Option("yearly", "Yearly")
-                        ],
-                        on_change=self._on_time_filter_change
-                    )
-                ], spacing=15),
-                
-                ft.Container(expand=True),
-                
-                # Reference selector and actions
-                ft.Row([
-                    ft.Text("Reference:", weight=ft.FontWeight.BOLD, color="#2c3e50"),
-                    ft.Dropdown(
-                        width=100,
-                        value=str(self.selected_reference_id),
-                        options=[ft.dropdown.Option(str(i)) for i in range(1, 6)],
-                        on_change=self._on_reference_change
-                    ),
-                    ft.IconButton(
-                        icon=ft.icons.REFRESH,
-                        tooltip="Refresh data",
-                        on_click=self._refresh_data,
-                        icon_color="#3498db"
-                    ),
-                    ft.IconButton(
-                        icon=ft.icons.FULLSCREEN,
-                        tooltip="Toggle fullscreen",
-                        on_click=self._toggle_fullscreen,
-                        icon_color="#3498db"
-                    )
-                ], spacing=10)
-            ])
+
+        # Legend
+        legend = ft.Row([
+            ft.Row([ft.Container(width=16, height=16, bgcolor="#8B0000", border_radius=3), ft.Container(width=4), ft.Text("Critical", size=12, color=colors.text_primary)]),
+            ft.Row([ft.Container(width=16, height=16, bgcolor="#e74c3c", border_radius=3), ft.Container(width=4), ft.Text("High", size=12, color=colors.text_primary)]),
+            ft.Row([ft.Container(width=16, height=16, bgcolor="#f39c12", border_radius=3), ft.Container(width=4), ft.Text("Medium", size=12, color=colors.text_primary)]),
+            ft.Row([ft.Container(width=16, height=16, bgcolor="#2ecc71", border_radius=3), ft.Container(width=4), ft.Text("Low", size=12, color=colors.text_primary)]),
+            ft.Row([ft.Container(width=16, height=16, bgcolor="#27ae60", border_radius=3), ft.Container(width=4), ft.Text("Very Low", size=12, color=colors.text_primary)]),
+        ], spacing=15, alignment=ft.MainAxisAlignment.CENTER, wrap=True)
+
+        # Heatmap grid
+        heatmap_card = create_modern_card(colors, self.create_heatmap_grid(), padding=ft.padding.all(16))
+
+        # Center column
+        center_column = ft.Column([
+            self.suggestions_container, # Add suggestions here
+            create_modern_card(colors, self.selected_assessment_text, padding=10), # Show selected
+            ft.Container(height=10),
+            create_modern_card(colors, legend, padding=ft.padding.symmetric(horizontal=16, vertical=10)),
+            ft.Container(height=10),
+            heatmap_card
+        ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
+
+        # Stats/Insights panel
+        stats = self.create_stats_section()
+        insights_panel = create_modern_card(
+            colors,
+            ft.Column([
+                ft.Text("Insights", size=16, weight=ft.FontWeight.BOLD, color=colors.text_primary),
+                ft.Divider(height=1, color=colors.border),
+                stats
+            ], scroll=ft.ScrollMode.AUTO, spacing=10),
+            padding=ft.padding.all(16)
         )
-    
-    def _build_interactive_heatmap(self):
-        """Build the main interactive heatmap"""
+
+        # Build resizable row
+        main_row = self._build_resizable_row(filter_panel, center_column, insights_panel)
+        self._main_content_container = ft.Container(expand=True, content=main_row)
+
+        # Add card to BaseView
+        self.cards_column.controls.clear()
+        self.add_card(self._main_content_container)
+
+    def apply_theme(self, colors):
+        """Apply theme colors"""
+        try:
+            self._build_ui()
+            apply_theme_to_control(self, colors)
+        except Exception:
+            pass
+
+    def create_heatmap_grid(self):
+        """Create the risk heatmap grid"""
+        colors = self.colors
+        
+        if not self.reference_id:
+            return self._create_message_grid("Select an assessment to view its heatmap", Icons.TOUCH_APP)
+        
         if not self.heatmap_data:
-            return ft.Container(
-                height=400,
-                alignment=ft.alignment.center,
-                content=ft.Column([
-                    ft.ProgressRing(width=50, height=50),
-                    ft.Container(height=20),
-                    ft.Text("Loading heatmap data...", size=16)
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-            )
-        
-        # Get current heatmap data
-        current_data = self.heatmap_data.get(self.selected_reference_id, {})
-        heatmap_grid = current_data.get('heatmapGrid', {})
-        
-        if not heatmap_grid:
-            return ft.Container(
-                height=400,
-                alignment=ft.alignment.center,
-                content=ft.Text("No heatmap data available", size=16)
-            )
-        
-        # Build interactive heatmap matrix
-        impact_levels = ["Very High", "High", "Medium", "Low", "Very Low"]
-        likelihood_levels = ["Very Low", "Low", "Medium", "High", "Very High"]
-        
-        # Header row
-        header_cells = [ft.Container(
-            width=120,
-            height=50,
-            alignment=ft.alignment.center,
-            content=ft.Text(
-                "Impact ↓ / Likelihood →",
-                size=12,
-                weight=ft.FontWeight.BOLD,
-                color="#2c3e50",
-                text_align=ft.TextAlign.CENTER
-            )
-        )]
-        
-        for likelihood in likelihood_levels:
-            header_cells.append(ft.Container(
+            return self._create_message_grid("Loading heatmap data...", Icons.HOURGLASS_EMPTY)
+
+        try:
+            heatmap_grid = self.heatmap_data.get("heatmapGrid", {})
+            
+            if not heatmap_grid:
+                return self._create_message_grid("No risk data available for this assessment", Icons.INFO_OUTLINE)
+
+            impact_levels = ["Catastrophic", "Major", "Moderate", "Minor", "Negligible"]
+            likelihood_levels = ["Rare", "Unlikely", "Possible", "Probable", "Very High"]
+
+            # Header row
+            header_cells = [ft.Container(
                 width=100,
-                height=50,
+                height=45,
                 alignment=ft.alignment.center,
-                bgcolor="#34495e",
-                content=ft.Text(
-                    likelihood,
-                    size=12,
-                    weight=ft.FontWeight.BOLD,
-                    color="white",
-                    text_align=ft.TextAlign.CENTER
-                ),
-                border_radius=ft.border_radius.only(top_left=5, top_right=5)
-            ))
-        
-        header_row = ft.Row(header_cells, spacing=2)
-        
-        # Data rows
-        matrix_rows = [header_row]
-        
-        for impact in impact_levels:
-            row_cells = [ft.Container(
-                width=120,
-                height=80,
-                alignment=ft.alignment.center,
-                bgcolor="#34495e",
-                content=ft.Text(
-                    impact,
-                    size=12,
-                    weight=ft.FontWeight.BOLD,
-                    color="white",
-                    text_align=ft.TextAlign.CENTER
-                ),
-                border_radius=ft.border_radius.only(top_left=5, bottom_left=5)
+                content=ft.Text("Impact ↓ / Likelihood →", size=10, weight=ft.FontWeight.BOLD, 
+                               color=colors.text_secondary, text_align=ft.TextAlign.CENTER)
             )]
-            
+
             for likelihood in likelihood_levels:
-                count = heatmap_grid.get(impact, {}).get(likelihood, 0)
-                risk_level, color = self._calculate_risk_level(impact, likelihood)
-                
-                # Create animated, interactive cell
-                cell = ft.Container(
-                    width=100,
-                    height=80,
+                header_cells.append(ft.Container(
+                    width=85,
+                    height=45,
+                    bgcolor="#34495e",
+                    border_radius=ft.border_radius.only(top_left=4, top_right=4),
                     alignment=ft.alignment.center,
-                    bgcolor=color,
-                    border_radius=8,
-                    content=ft.Column([
-                        ft.Text(
+                    content=ft.Text(likelihood, size=10, weight=ft.FontWeight.BOLD, color="white", text_align=ft.TextAlign.CENTER)
+                ))
+
+            header_row = ft.Row(header_cells, spacing=2)
+            rows = [header_row]
+
+            for impact in impact_levels:
+                row_cells = [ft.Container(
+                    width=100,
+                    height=55,
+                    bgcolor="#34495e",
+                    border_radius=ft.border_radius.only(top_left=4, bottom_left=4),
+                    alignment=ft.alignment.center,
+                    content=ft.Text(impact, size=10, weight=ft.FontWeight.BOLD, color="white", text_align=ft.TextAlign.CENTER)
+                )]
+
+                for likelihood in likelihood_levels:
+                    count = heatmap_grid.get(impact, {}).get(likelihood, 0)
+                    risk_level, cell_color = self._calculate_risk_level(impact, likelihood)
+                    is_enabled = self.enabled_levels.get(risk_level, True)
+                    
+                    display_color = cell_color if is_enabled else colors.surface
+                    text_color = "white" if is_enabled and count > 0 else colors.text_secondary
+                    
+                    cell = ft.Container(
+                        width=85,
+                        height=55,
+                        bgcolor=display_color,
+                        border=ft.border.all(1, colors.border) if not is_enabled or count == 0 else None,
+                        border_radius=5,
+                        alignment=ft.alignment.center,
+                        content=ft.Text(
                             str(count),
-                            size=18,
+                            size=16,
                             weight=ft.FontWeight.BOLD,
-                            color="white"
+                            color=text_color
                         ),
-                        ft.Text(
-                            risk_level,
-                            size=10,
-                            color="white",
-                            text_align=ft.TextAlign.CENTER
-                        )
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
-                    animate_scale=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
-                    on_click=lambda e, i=impact, l=likelihood, c=count, r=risk_level: self._on_cell_click(i, l, c, r),
-                    on_hover=lambda e, i=impact, l=likelihood: self._on_cell_hover(e, i, l),
-                    tooltip=f"{impact} Impact, {likelihood} Likelihood\n{count} assessments\nRisk Level: {risk_level}"
-                )
-                
-                row_cells.append(cell)
-            
-            matrix_rows.append(ft.Row(row_cells, spacing=2))
-        
+                        on_click=lambda e, i=impact, l=likelihood, c=count, r=risk_level: self.show_cell_details(i, l, c, r),
+                        tooltip=f"{impact} × {likelihood}\n{count} risk(s) - {risk_level}"
+                    )
+                    row_cells.append(cell)
+
+                rows.append(ft.Row(row_cells, spacing=2))
+
+            return ft.Container(
+                padding=10,
+                content=ft.Column(rows, spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            )
+
+        except Exception as e:
+            print(f"Error creating heatmap grid: {e}")
+            return self._create_message_grid(f"Error: {str(e)}", Icons.ERROR_OUTLINE)
+
+    def _create_message_grid(self, message, icon):
+        """Create a placeholder message grid"""
+        colors = self.colors
         return ft.Container(
             padding=20,
-            content=ft.Column(
-                matrix_rows,
-                spacing=2,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER
-            ),
-            alignment=ft.alignment.center,
-            expand=True
-        )
-    
-    def _build_quick_stats_bar(self):
-        """Build quick statistics bar below heatmap"""
-        if not self.heatmap_data:
-            return ft.Container()
-        
-        current_data = self.heatmap_data.get(self.selected_reference_id, {})
-        stats = self._calculate_heatmap_stats(current_data)
-        
-        return ft.Container(
-            height=80,
-            bgcolor=None,
-            padding=ft.padding.symmetric(horizontal=20, vertical=10),
-            content=ft.Row([
-                self._create_stat_pill("Total Assessments", str(stats['total']), "#3498db"),
-                self._create_stat_pill("Critical Risk", str(stats['critical']), "#8B0000"),
-                self._create_stat_pill("High Risk", str(stats['high']), "#e74c3c"),
-                self._create_stat_pill("Medium Risk", str(stats['medium']), "#f39c12"),
-                self._create_stat_pill("Low Risk", str(stats['low']), "#2ecc71"),
-                ft.Container(expand=True),
-                ft.Text(f"Last Updated: {format_date(self.last_update, 'datetime')}", 
-                        size=12)
-            ], alignment=ft.MainAxisAlignment.CENTER, spacing=15)
-        )
-    
-    def _build_side_panel(self):
-        """Build side panel with contextual information and actions"""
-        return ft.Column([
-            # Selected cell information
-            ft.Card(
-                content=ft.Container(
-                    padding=15,
-                    content=ft.Column([
-                        ft.Text("Cell Information", size=16, weight=ft.FontWeight.BOLD),
-                        ft.Divider(),
-                        ft.Text("Click on a heatmap cell to see details")
-                    ])
-                )
-            ),
-            
-            ft.Container(height=15),
-            
-            # Quick actions
-            ft.Card(
-                content=ft.Container(
-                    padding=15,
-                    content=ft.Column([
-                        ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD),
-                        ft.Divider(),
-                        ft.ElevatedButton(
-                            text="Create Assessment",
-                            width=200,
-                            icon=ft.Icons.ASSIGNMENT_ADD,
-                            bgcolor="#2ecc71",
-                            color="white",
-                            on_click=self._create_new_assessment
-                        ),
-                        ft.Container(height=10),
-                        ft.ElevatedButton(
-                            text="View All Assessments",
-                            width=200,
-                            icon=ft.Icons.ASSIGNMENT,
-                            bgcolor="#3498db",
-                            color="white",
-                            on_click=self._view_all_assessments
-                        ),
-                        ft.Container(height=10),
-                        ft.ElevatedButton(
-                            text="Generate Report",
-                            width=200,
-                            icon=ft.Icons.DESCRIPTION,
-                            bgcolor="#9b59b6",
-                            color="white",
-                            on_click=self._generate_report
-                        )
-                    ])
-                )
-            ),
-            
-            ft.Container(height=15),
-            
-            # Risk trends (placeholder)
-            ft.Card(
-                content=ft.Container(
-                    padding=15,
-                    content=ft.Column([
-                        ft.Text("Risk Trends", size=16, weight=ft.FontWeight.BOLD),
-                        ft.Divider(),
-                        ft.Container(
-                            height=150,
-                            alignment=ft.alignment.center,
-                            content=ft.Text("Trend chart placeholder")
-                        )
-                    ])
-                )
-            )
-        ], scroll=ft.ScrollMode.AUTO)
-    
-    def _build_form_panel(self):
-        """Build assessment form panel for split view"""
-        if not self.assessment_form:
-            return ft.Container(
-                padding=20,
+            bgcolor=colors.surface,
+            border=ft.border.all(1, colors.border),
+            border_radius=8,
+            content=ft.Container(
+                height=300,
+                alignment=ft.alignment.center,
                 content=ft.Column([
-                    ft.Text("Assessment Form", size=18, weight=ft.FontWeight.BOLD),
-                    ft.Divider(),
-                    ft.Text("Select 'New Assessment' or click on a heatmap cell to begin", 
-                           text_align=ft.TextAlign.CENTER),
-                    ft.Container(height=20),
-                    ft.ElevatedButton(
-                        text="Create New Assessment",
-                        icon=ft.icons.ADD,
-                        bgcolor="#2ecc71",
-                        color="white",
-                        on_click=self._create_new_assessment,
-                        width=200
-                    )
+                    ft.Icon(icon, size=48, color=colors.text_secondary),
+                    ft.Container(height=10),
+                    ft.Text(message, size=16, color=colors.text_secondary, text_align=ft.TextAlign.CENTER)
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
             )
-        
-        return self.assessment_form
-    
-    def _create_stat_pill(self, label, value, color):
-        """Create a statistic pill component"""
-        return ft.Container(
-            content=ft.Row([
-                ft.Container(
-                    width=8,
-                    height=40,
-                    bgcolor=color,
-                    border_radius=4
-                ),
-                ft.Container(width=8),
-                ft.Column([
-                    ft.Text(value, size=18, weight=ft.FontWeight.BOLD, color=color),
-                    ft.Text(label, size=11, color="#7f8c8d")
-                ], spacing=2)
-            ]),
-            padding=ft.padding.symmetric(horizontal=15, vertical=5),
-            bgcolor=None,
-            border_radius=20,
-            border=ft.border.all(1, "#e6e9ed")
         )
-    
+
     def _calculate_risk_level(self, impact, likelihood):
-        """Calculate risk level and color from impact and likelihood"""
-        impact_scores = {"Very Low": 1, "Low": 2, "Medium": 3, "High": 4, "Very High": 5}
-        likelihood_scores = {"Very Low": 1, "Low": 2, "Medium": 3, "High": 4, "Very High": 5}
+        """Calculate risk level and color"""
+        impact_scores = {"Negligible": 1, "Minor": 2, "Moderate": 3, "Major": 4, "Catastrophic": 5}
+        likelihood_scores = {"Rare": 1, "Unlikely": 2, "Possible": 3, "Probable": 4, "Very High": 5}
         
         impact_score = impact_scores.get(impact, 3)
         likelihood_score = likelihood_scores.get(likelihood, 3)
@@ -626,235 +599,191 @@ class ModernHeatmapDashboard(ft.Container):
         elif risk_score >= 15:
             return "High", "#e74c3c"
         elif risk_score >= 10:
-            return "Medium-High", "#f39c12"
-        elif risk_score >= 6:
-            return "Medium", "#f1c40f"
-        elif risk_score >= 3:
+            return "Medium", "#f39c12"
+        elif risk_score >= 5:
             return "Low", "#2ecc71"
         else:
             return "Very Low", "#27ae60"
-    
-    def _calculate_heatmap_stats(self, heatmap_data):
-        """Calculate statistics from heatmap data"""
-        stats = {"total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0}
-        
-        heatmap_grid = heatmap_data.get('heatmapGrid', {})
-        for impact, likelihood_dict in heatmap_grid.items():
-            for likelihood, count in likelihood_dict.items():
-                risk_level, _ = self._calculate_risk_level(impact, likelihood)
-                
-                stats["total"] += count
-                if risk_level == "Critical":
-                    stats["critical"] += count
-                elif risk_level in ["High"]:
-                    stats["high"] += count
-                elif risk_level in ["Medium-High", "Medium"]:
-                    stats["medium"] += count
-                else:
-                    stats["low"] += count
-        
-        return stats
-    
-    def _process_heatmap_results(self, results, reference_ids):
-        """Process heatmap results from multiple references"""
-        processed_data = {}
-        
-        for i, result in enumerate(results):
-            if not isinstance(result, Exception) and result:
-                processed_data[reference_ids[i]] = result
-        
-        return processed_data
-    
-    # Event handlers
-    def _on_view_mode_change(self, e):
-        """Handle view mode change"""
-        self.view_mode = list(e.control.selected)[0]
-        self.content = ft.Column([
-            self._build_dashboard_header(),
-            ft.Divider(height=1, color="#e6e9ed"),
-            self._build_main_content()
-        ], spacing=0, expand=True)
-        self.page.update()
-    
-    def _on_cell_click(self, impact, likelihood, count, risk_level):
-        """Handle heatmap cell click"""
-        # Update side panel with cell information
-        self.selected_cell_info = {
-            "impact": impact,
-            "likelihood": likelihood,
-            "count": count,
-            "risk_level": risk_level
-        }
-        
-        # Show cell details in side panel
-        self._update_side_panel_with_cell_info()
-        
-        # If in split view, offer to create assessment with these parameters
-        if self.view_mode == "split":
-            self._offer_assessment_creation(impact, likelihood)
-    
-    def _on_cell_hover(self, e, impact, likelihood):
-        """Handle cell hover for animations"""
-        if e.data == "true":  # Mouse enter
-            e.control.scale = 1.05
-        else:  # Mouse leave
-            e.control.scale = 1.0
-        e.control.update()
-    
-    def _on_filter_change(self, e):
-        """Handle filter changes"""
-        self.filter_settings["department"] = e.control.value
-        asyncio.create_task(self._refresh_data(None))
-    
-    def _on_time_filter_change(self, e):
-        """Handle time filter changes"""
-        self.filter_settings["time_period"] = e.control.value
-        asyncio.create_task(self._refresh_data(None))
-    
-    def _on_reference_change(self, e):
-        """Handle reference ID change"""
-        self.selected_reference_id = int(e.control.value)
-        self._update_heatmap_display()
-    
-    async def _refresh_data(self, e):
-        """Refresh heatmap data"""
-        await self._load_initial_data()
-    
-    def _toggle_fullscreen(self, e):
-        """Toggle fullscreen mode"""
-        # Implementation for fullscreen mode
-        pass
-    
-    def _toggle_comparison_mode(self, e):
-        """Toggle comparison mode"""
-        self.comparison_mode = not self.comparison_mode
-        # Implementation for comparison mode
-    
-    def _toggle_real_time(self, e):
-        """Toggle real-time updates"""
-        self.is_real_time = not self.is_real_time
-        if self.is_real_time:
-            asyncio.create_task(self._start_real_time_updates())
-    
-    async def _start_real_time_updates(self):
-        """Start real-time data updates"""
-        while self.is_real_time:
-            await asyncio.sleep(30)  # Update every 30 seconds
-            await self._load_initial_data()
-    
-    def _create_new_assessment(self, e):
-        """Create new assessment"""
-        if self.view_mode == "split":
-            self._show_assessment_form_in_panel()
-        else:
-            self._show_assessment_form_dialog()
-    
-    def _show_assessment_form_in_panel(self):
-        """Show assessment form in the split panel"""
-        self.assessment_form = ModernAssessmentForm(
-            page=self.page,
-            user=self.user,
-            on_save=self._on_assessment_saved,
-            on_cancel=self._on_assessment_cancelled
+
+    def _on_level_checkbox_change(self, level, e):
+        """Handle risk level checkbox change"""
+        try:
+            self.enabled_levels[level] = bool(e.control.value)
+            self._build_ui()
+            if self.page:
+                self.page.update()
+        except Exception:
+            pass
+
+    def create_stats_section(self):
+        """Create statistics section"""
+        if not self.heatmap_data:
+            return ft.Container(
+                padding=20,
+                content=ft.Text("No data to display", color=self.colors.text_secondary)
+            )
+
+        try:
+            heatmap_grid = self.heatmap_data.get("heatmapGrid", {})
+            stats = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Very Low": 0, "Total": 0}
+            
+            for impact, likelihood_dict in heatmap_grid.items():
+                for likelihood, count in likelihood_dict.items():
+                    risk_level, _ = self._calculate_risk_level(impact, likelihood)
+                    if risk_level in stats:
+                        stats[risk_level] += count
+                    stats["Total"] += count
+
+            return ft.Column([
+                self._create_stat_row("Critical", stats["Critical"], "#8B0000"),
+                self._create_stat_row("High", stats["High"], "#e74c3c"),
+                self._create_stat_row("Medium", stats["Medium"], "#f39c12"),
+                self._create_stat_row("Low", stats["Low"], "#2ecc71"),
+                self._create_stat_row("Very Low", stats["Very Low"], "#27ae60"),
+                ft.Divider(height=1, color=self.colors.border),
+                self._create_stat_row("Total Risks", stats["Total"], "#3498db"),
+            ], spacing=8)
+            
+        except Exception as e:
+            print(f"Error creating stats: {e}")
+            return ft.Container()
+
+    def _create_stat_row(self, label, value, color):
+        """Create a stat row"""
+        return ft.Container(
+            padding=ft.padding.symmetric(vertical=8, horizontal=12),
+            border_radius=6,
+            bgcolor=self.colors.surface,
+            content=ft.Row([
+                ft.Container(width=8, height=30, bgcolor=color, border_radius=4),
+                ft.Container(width=10),
+                ft.Text(label, size=13, color=self.colors.text_primary),
+                ft.Container(expand=True),
+                ft.Text(str(value), size=16, weight=ft.FontWeight.BOLD, color=color)
+            ])
         )
-        self._refresh_ui()
-    
-    def _show_assessment_form_dialog(self):
-        """Show assessment form in a dialog"""
-        # Implementation for dialog form
-        pass
-    
-    def _offer_assessment_creation(self, impact, likelihood):
-        """Offer to create assessment with pre-filled risk parameters"""
-        # Implementation for quick assessment creation
-        pass
-    
-    def _update_side_panel_with_cell_info(self):
-        """Update side panel with selected cell information"""
-        if not self.selected_cell_info:
-            return
-        
-        # Update side panel content
-        # This would update the side panel UI with the selected cell details
-        pass
-    
-    def _on_assessment_saved(self, result):
-        """Handle assessment saved"""
-        self.assessment_form = None
-        asyncio.create_task(self._refresh_data(None))
-        self._show_success("Assessment saved successfully!")
-        if self.on_assessment_created:
-            self.on_assessment_created(result)
-    
-    def _on_assessment_cancelled(self):
-        """Handle assessment cancelled"""
-        self.assessment_form = None
-        self._refresh_ui()
-    
-    def _view_all_assessments(self, e):
-        """View all assessments"""
-        # Implementation for viewing all assessments
-        pass
-    
-    def _generate_report(self, e):
-        """Generate heatmap report"""
-        # Implementation for report generation
-        pass
-    
-    def _export_heatmap(self, e):
-        """Export heatmap data"""
-        # Implementation for export
-        pass
-    
-    def _show_settings(self, e):
-        """Show dashboard settings"""
-        # Implementation for settings dialog
-        pass
-    
-    def _update_heatmap_display(self):
-        """Update the heatmap display"""
-        self.content = ft.Column([
-            self._build_dashboard_header(),
-            ft.Divider(height=1, color="#e6e9ed"),
-            self._build_main_content()
-        ], spacing=0, expand=True)
-        if hasattr(self, 'page') and self.page:
+
+    def export_heatmap(self, e):
+        """Export heatmap dialog"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Export Heatmap"),
+            content=ft.Column([
+                ft.Text("Select export format:", size=14),
+                ft.Container(height=15),
+                ft.ElevatedButton(text="Export as PDF", bgcolor="#3498db", color="white", width=200, on_click=lambda e: self._close_dialog()),
+                ft.Container(height=8),
+                ft.ElevatedButton(text="Export as Excel", bgcolor="#2ecc71", color="white", width=200, on_click=lambda e: self._close_dialog()),
+                ft.Container(height=8),
+                ft.ElevatedButton(text="Export as Image", bgcolor="#f39c12", color="white", width=200, on_click=lambda e: self._close_dialog()),
+            ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            actions=[ft.TextButton("Cancel", on_click=lambda e: self._close_dialog())],
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def show_cell_details(self, impact, likelihood, count, risk_level):
+        """Show cell details dialog"""
+        dialog = ft.AlertDialog(
+            title=ft.Text("Risk Cell Details"),
+            content=ft.Column([
+                ft.Row([ft.Text("Impact:", weight=ft.FontWeight.BOLD), ft.Text(impact)]),
+                ft.Row([ft.Text("Likelihood:", weight=ft.FontWeight.BOLD), ft.Text(likelihood)]),
+                ft.Row([ft.Text("Risk Level:", weight=ft.FontWeight.BOLD), ft.Text(risk_level)]),
+                ft.Divider(),
+                ft.Row([
+                    ft.Text("Risk Count:", weight=ft.FontWeight.BOLD), 
+                    ft.Text(str(count), size=18, weight=ft.FontWeight.BOLD, color="#3498db")
+                ]),
+                ft.Container(height=10),
+                ft.Text("This cell represents risks at this impact/likelihood intersection.", 
+                       size=12, color="#7f8c8d"),
+            ], width=350, spacing=8),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self._close_dialog()),
+                ft.TextButton("View Assessments", on_click=lambda e: self._navigate_filter(risk_level, impact, likelihood)) if count > 0 else None,
+            ],
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def _close_dialog(self):
+        """Close dialog"""
+        if self.page.dialog:
+            self.page.dialog.open = False
             self.page.update()
-    
-    def _update_quick_stats(self):
-        """Update quick statistics"""
-        # Implementation for updating stats
-        pass
-    
-    def _refresh_ui(self):
-        """Refresh the entire UI"""
-        self._update_heatmap_display()
-    
-    # Utility methods
-    def _show_loading_state(self):
-        """Show loading state"""
-        pass
-    
-    def _hide_loading_state(self):
-        """Hide loading state"""
-        pass
-    
-    def _show_success(self, message):
-        """Show success message"""
-        self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor="#2ecc71")
-        self.page.snack_bar.open = True
-        self.page.update()
-    
-    def _show_error(self, message):
-        """Show error message"""
-        self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor="#e74c3c")
-        self.page.snack_bar.open = True
-        self.page.update()
-    
+
+    def _navigate_filter(self, level=None, impact=None, likelihood=None):
+        """Navigate to assessments with filter"""
+        if hasattr(self.page, 'APP_INSTANCE') and self.page.APP_INSTANCE:
+            app = self.page.APP_INSTANCE
+            flt = {}
+            if level:
+                flt['risk_level'] = level
+            if impact:
+                flt['impact'] = impact
+            if likelihood:
+                flt['likelihood'] = likelihood
+            app.pending_assessment_filter = flt
+            app.current_reference_id = self.reference_id
+            self._close_dialog()
+            app.show_view("assessments")
+
     async def cleanup(self):
         """Cleanup resources"""
-        self.is_real_time = False
         try:
             await self.assessment_controller.close()
         except Exception as e:
-            print(f"Error during cleanup: {e}") 
+            print(f"Error closing controller: {e}")
+
+    def _build_resizable_row(self, left_panel, center_panel, right_panel):
+        """Build resizable 3-panel layout"""
+        colors = self.colors
+
+        def divider(on_pan_update):
+            return ft.GestureDetector(
+                on_pan_update=on_pan_update,
+                content=ft.Container(width=6, bgcolor=colors.border, border_radius=3)
+            )
+
+        def on_drag_left(e):
+            try:
+                dx = getattr(e, "delta_x", 0) or 0
+                if dx > 2 and self.center_flex > 2:
+                    self.left_flex += 1
+                    self.center_flex -= 1
+                elif dx < -2 and self.left_flex > 1:
+                    self.left_flex -= 1
+                    self.center_flex += 1
+                self._rebuild_main_row(left_panel, center_panel, right_panel)
+            except Exception:
+                pass
+
+        def on_drag_right(e):
+            try:
+                dx = getattr(e, "delta_x", 0) or 0
+                if dx > 2 and self.right_flex > 1:
+                    self.right_flex -= 1
+                    self.center_flex += 1
+                elif dx < -2 and self.center_flex > 2:
+                    self.center_flex -= 1
+                    self.right_flex += 1
+                self._rebuild_main_row(left_panel, center_panel, right_panel)
+            except Exception:
+                pass
+
+        return ft.Row([
+            ft.Container(expand=self.left_flex, content=left_panel),
+            divider(on_drag_left),
+            ft.Container(expand=self.center_flex, content=center_panel),
+            divider(on_drag_right),
+            ft.Container(expand=self.right_flex, content=right_panel)
+        ], expand=True, spacing=4)
+
+    def _rebuild_main_row(self, left_panel, center_panel, right_panel):
+        """Rebuild main row after resize"""
+        if hasattr(self, "_main_content_container"):
+            self._main_content_container.content = self._build_resizable_row(left_panel, center_panel, right_panel)
+            if self.page:
+                self.page.update()

@@ -9,6 +9,7 @@ from src.views.assessments.list import AssessmentListView
 from src.views.users.user_management import UserManagementView
 from src.views.departments.departments_view import DepartmentsView
 from src.views.projects.projects_view import ProjectsView
+from src.views.dashboard.modern_heatmap_dashboard import ModernHeatmapDashboard
 from src.core.config import get_db_connection
 from src.controllers.auth_controller import AuthController
 from src.controllers.assessment_controller import AssessmentController
@@ -513,16 +514,19 @@ class RiskAssessmentApp:
                             expand=True
                         )
                 elif view_name == "heatmap":
-                    from src.views.dashboard.heatmap import HeatmapView
-                    heatmap_view = HeatmapView(
-                        self.page, 
-                        self.current_user,
-                        on_navigate=self.on_navigate
-                    )
-                    self.views[view_name] = heatmap_view
-                    # Load data when view is created
-                    if hasattr(heatmap_view, 'load_data'):
-                        heatmap_view.load_data()
+                    try:
+                        heatmap_view = ModernHeatmapDashboard(
+                            self.page, 
+                            self.current_user
+                        )
+                        self.views[view_name] = heatmap_view
+                    except Exception as e:
+                        print(f"Error creating heatmap view: {e}")
+                        self.views[view_name] = ft.Container(
+                            content=ft.Text(f"Error loading heatmap view: {str(e)}", color=ft.Colors.RED),
+                            padding=20,
+                            expand=True
+                        )
                 elif view_name == "settings":
                     self.views[view_name] = self.create_settings_view()
 
@@ -548,6 +552,13 @@ class RiskAssessmentApp:
                     try:
                         if hasattr(self.views[view_name], "load_dashboard_data"):
                             self.page.run_task(self.views[view_name].load_dashboard_data)
+                    except Exception:
+                        pass
+                # If heatmap selected, load its data
+                elif view_name == "heatmap":
+                    try:
+                        if hasattr(self.views[view_name], "load_data"):
+                            self.views[view_name].load_data()
                     except Exception:
                         pass
                 # Keep sidebar selection in sync when navigating programmatically

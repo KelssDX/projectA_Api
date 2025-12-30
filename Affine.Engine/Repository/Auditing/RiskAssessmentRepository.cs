@@ -733,6 +733,226 @@ namespace Affine.Engine.Repository.Auditing
             }
         }
 
+        public async Task<Affine.Engine.Model.Auditing.Department> CreateDepartmentAsync(Affine.Engine.Model.Auditing.Department department)
+        {
+            if (department == null)
+                throw new ArgumentNullException(nameof(department));
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"
+                    INSERT INTO departments (name, head, risk_level_id, assessments, created_at, updated_at)
+                    VALUES (@Name, @Head, @RiskLevelId, COALESCE(@Assessments, 0), NOW(), NOW())
+                    RETURNING 
+                        id, 
+                        name, 
+                        head, 
+                        risk_level_id AS RiskLevelId, 
+                        assessments, 
+                        created_at AS CreatedAt, 
+                        updated_at AS UpdatedAt;";
+
+                var created = await dbConnection.QueryFirstOrDefaultAsync<Affine.Engine.Model.Auditing.Department>(query, department);
+                return created;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to create department. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<Affine.Engine.Model.Auditing.Department> UpdateDepartmentAsync(Affine.Engine.Model.Auditing.Department department)
+        {
+            if (department == null)
+                throw new ArgumentNullException(nameof(department));
+
+            if (department.Id <= 0)
+                throw new ArgumentException("Department ID must be greater than zero.", nameof(department.Id));
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"
+                    UPDATE departments
+                    SET 
+                        name = @Name,
+                        head = @Head,
+                        risk_level_id = @RiskLevelId,
+                        updated_at = NOW()
+                    WHERE id = @Id
+                    RETURNING 
+                        id, 
+                        name, 
+                        head, 
+                        risk_level_id AS RiskLevelId, 
+                        assessments, 
+                        created_at AS CreatedAt, 
+                        updated_at AS UpdatedAt;";
+
+                var updated = await dbConnection.QueryFirstOrDefaultAsync<Affine.Engine.Model.Auditing.Department>(query, department);
+                return updated;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to update department. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> DeleteDepartmentAsync(int departmentId)
+        {
+            if (departmentId <= 0)
+                throw new ArgumentException("Department ID must be greater than zero.", nameof(departmentId));
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"DELETE FROM departments WHERE id = @Id;";
+                var affected = await dbConnection.ExecuteAsync(query, new { Id = departmentId });
+                return affected > 0;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to delete department. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<Affine.Engine.Model.Auditing.Project> CreateProjectAsync(Affine.Engine.Model.Auditing.Project project)
+        {
+            if (project == null)
+                throw new ArgumentNullException(nameof(project));
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"
+                    INSERT INTO projects (
+                        name,
+                        description,
+                        status_id,
+                        department_id,
+                        start_date,
+                        end_date,
+                        budget,
+                        risk_level_id,
+                        manager,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        @Name,
+                        @Description,
+                        @StatusId,
+                        @DepartmentId,
+                        @StartDate,
+                        @EndDate,
+                        @Budget,
+                        @RiskLevelId,
+                        @Manager,
+                        NOW(),
+                        NOW()
+                    )
+                    RETURNING
+                        id,
+                        name,
+                        description,
+                        status_id AS StatusId,
+                        department_id AS DepartmentId,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        budget,
+                        risk_level_id AS RiskLevelId,
+                        manager,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt;";
+
+                var created = await dbConnection.QueryFirstOrDefaultAsync<Affine.Engine.Model.Auditing.Project>(query, project);
+                return created;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to create project. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<Affine.Engine.Model.Auditing.Project> UpdateProjectAsync(Affine.Engine.Model.Auditing.Project project)
+        {
+            if (project == null)
+                throw new ArgumentNullException(nameof(project));
+
+            if (project.Id <= 0)
+                throw new ArgumentException("Project ID must be greater than zero.", nameof(project.Id));
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"
+                    UPDATE projects
+                    SET
+                        name = @Name,
+                        description = @Description,
+                        status_id = @StatusId,
+                        department_id = @DepartmentId,
+                        start_date = @StartDate,
+                        end_date = @EndDate,
+                        budget = @Budget,
+                        risk_level_id = @RiskLevelId,
+                        manager = @Manager,
+                        updated_at = NOW()
+                    WHERE id = @Id
+                    RETURNING
+                        id,
+                        name,
+                        description,
+                        status_id AS StatusId,
+                        department_id AS DepartmentId,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        budget,
+                        risk_level_id AS RiskLevelId,
+                        manager,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt;";
+
+                var updated = await dbConnection.QueryFirstOrDefaultAsync<Affine.Engine.Model.Auditing.Project>(query, project);
+                return updated;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to update project. Error: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<bool> DeleteProjectAsync(int projectId)
+        {
+            if (projectId <= 0)
+                throw new ArgumentException("Project ID must be greater than zero.", nameof(projectId));
+
+            try
+            {
+                using IDbConnection dbConnection = new NpgsqlConnection(_connectionString);
+                dbConnection.Open();
+
+                const string query = @"DELETE FROM projects WHERE id = @Id;";
+                var affected = await dbConnection.ExecuteAsync(query, new { Id = projectId });
+                return affected > 0;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to delete project. Error: {ex.Message}", ex);
+            }
+        }
+
         public async Task<IEnumerable<object>> GetAssessmentsAsync()
         {
             try

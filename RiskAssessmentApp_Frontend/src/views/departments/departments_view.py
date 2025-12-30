@@ -21,9 +21,36 @@ class DepartmentsView(BaseView):
         self.center_flex = getattr(self, "center_flex", 4)
         self.auditing_client = AuditingAPIClient()
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
-        super().__init__(page, "Departments", on_search=self.on_search_change, colors=colors)
+        actions = [
+            create_modern_button(colors, "+ Add", icon=Icons.ADD, on_click=self.show_add_department_dialog, style="success", width=120),
+            create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=lambda e: self.refresh_departments(), style="secondary", width=120),
+        ]
+        super().__init__(page, "Departments", on_search=self.on_search_change, actions=actions, colors=colors)
         self._build_ui()
         self.load_departments()  # Load departments from API
+
+    def _open_dialog(self, dialog: ft.AlertDialog):
+        if hasattr(self.page, "open"):
+            self.page.open(dialog)
+            return
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def _close_dialog(self, dialog: ft.AlertDialog):
+        if hasattr(self.page, "close"):
+            self.page.close(dialog)
+            return
+        try:
+            dialog.open = False
+        except Exception:
+            if hasattr(self.page, "dialog") and self.page.dialog:
+                self.page.dialog.open = False
+        self.page.update()
+
+    def _risk_level_to_id(self, risk_level: str):
+        mapping = {"High": 1, "Medium": 2, "Low": 3}
+        return mapping.get(risk_level, 3)
 
     def load_departments(self):
         """Load departments from API"""
@@ -128,13 +155,7 @@ class DepartmentsView(BaseView):
         self.departments_table_container = ft.Container(expand=True, content=None)
         # Build cards under BaseView
         self.cards_column.controls.clear()
-        top_row = ft.Row([
-            self.risk_filter,
-            ft.Container(expand=True),
-            create_modern_button(colors, "Add Department", icon=Icons.ADD, on_click=self.show_add_department_dialog, style="success"),
-            create_modern_button(colors, "Refresh", icon=Icons.REFRESH, on_click=lambda e: self.refresh_departments(), style="secondary"),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        self.add_card(top_row)
+        self.add_card(filter_row)
         status_section = ft.Column([
             self.status_message,
             ft.Container(content=self.loading_indicator, alignment=ft.alignment.center, height=40),
@@ -289,35 +310,11 @@ class DepartmentsView(BaseView):
                 ft.Container(
                     expand=1.5,
                     content=ft.Row([
-                        ft.Container(
-                            width=40,
-                            height=30,
-                            bgcolor="#3498db",
-                            border_radius=5,
-                            alignment=ft.alignment.center,
-                            content=ft.Icon(Icons.VISIBILITY, color="white", size=16),
-                            on_click=lambda e, d=dept: self.view_department_details(d),
-                        ),
+                        ft.ElevatedButton(text="View", on_click=lambda e, d=dept: self.view_department_details(d)),
                         ft.Container(width=10),
-                        ft.Container(
-                            width=40,
-                            height=30,
-                            bgcolor="#2ecc71",
-                            border_radius=5,
-                            alignment=ft.alignment.center,
-                            content=ft.Icon(Icons.EDIT, color="white", size=16),
-                            on_click=lambda e, d=dept: self.edit_department(d),
-                        ),
+                        ft.ElevatedButton(text="Edit", on_click=lambda e, d=dept: self.edit_department(d)),
                         ft.Container(width=10),
-                        ft.Container(
-                            width=40,
-                            height=30,
-                            bgcolor="#e74c3c",
-                            border_radius=5,
-                            alignment=ft.alignment.center,
-                            content=ft.Icon(Icons.DELETE, color="white", size=16),
-                            on_click=lambda e, d=dept: self.delete_department(d),
-                        ),
+                        ft.ElevatedButton(text="Delete", on_click=lambda e, d=dept: self.delete_department(d)),
                     ], alignment=ft.MainAxisAlignment.CENTER),
                 ),
             ], expand=True)
@@ -374,8 +371,7 @@ class DepartmentsView(BaseView):
 
         # Define dialog close function
         def close_dialog(e):
-            dialog.open = False
-            self.page.update()
+            self._close_dialog(dialog)
 
         # Define save function
         def save_department(e):
@@ -383,51 +379,13 @@ class DepartmentsView(BaseView):
             if not name_field.value or not head_field.value:
                 return
 
-            # Create new department
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute("""
-                    INSERT INTO departments (name, head, risk_level, assessments)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id, name, head, risk_level, assessments
-                """, (name_field.value, head_field.value, risk_level_dropdown.value, 0))
-
-                new_dept = cursor.fetchone()
-                conn.commit()
-                cursor.close()
-                conn.close()
-
-                # Convert to a regular dictionary
-                new_dept = dict(new_dept)
-
-                # API version (commented out)
-                # new_dept_data = {
-                #     "name": name_field.value,
-                #     "head": head_field.value,
-                #     "risk_level": risk_level_dropdown.value,
-                #     "assessments": 0
-                # }
-                # response = requests.post(f"{self.api_base_url}/departments", json=new_dept_data)
-                # if response.status_code == 201:
-                #     new_dept = response.json()
-
-                # Add to departments list
-                self.departments.append(new_dept)
-                self.filtered_departments = self.departments.copy()
-
-                # Close dialog
-                close_dialog(e)
-
-                # Update department cards
-                self.update_department_cards()
-
-                # Show success message
-                self.show_status(f"Department '{new_dept['name']}' added successfully")
-            except Exception as ex:
-                print(f"Error adding department: {ex}")
-                self.show_status(f"Error adding department: {str(ex)}", is_error=True)
+            self.page.run_task(
+                self._create_department_async,
+                dialog,
+                name_field.value,
+                head_field.value,
+                risk_level_dropdown.value,
+            )
 
         # Create dialog
         dialog = ft.AlertDialog(
@@ -445,9 +403,25 @@ class DepartmentsView(BaseView):
         )
 
         # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
+
+    async def _create_department_async(self, dialog, name: str, head: str, risk_level: str):
+        try:
+            payload = {
+                "name": name,
+                "head": head,
+                "riskLevelId": self._risk_level_to_id(risk_level),
+                "assessments": 0,
+            }
+            await self.auditing_client.create_department(payload)
+            self._close_dialog(dialog)
+            await self._load_departments_async()
+            self.show_status(f"Department '{name}' added successfully")
+        except Exception as ex:
+            print(f"Error adding department: {ex}")
+            self.show_status(f"Error adding department: {str(ex)}", is_error=True)
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
 
     def edit_department(self, dept):
         # Create form fields
@@ -477,8 +451,7 @@ class DepartmentsView(BaseView):
 
         # Define dialog close function
         def close_dialog(e):
-            dialog.open = False
-            self.page.update()
+            self._close_dialog(dialog)
 
         # Define update function
         def update_department(e):
@@ -486,50 +459,15 @@ class DepartmentsView(BaseView):
             if not name_field.value or not head_field.value:
                 return
 
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE departments
-                    SET name = %s, head = %s, risk_level = %s
-                    WHERE id = %s
-                """, (name_field.value, head_field.value, risk_level_dropdown.value, dept["id"]))
-                conn.commit()
-                cursor.close()
-                conn.close()
-
-                # API version (commented out)
-                # updated_dept = {
-                #     "id": dept["id"],
-                #     "name": name_field.value,
-                #     "head": head_field.value,
-                #     "risk_level": risk_level_dropdown.value,
-                #     "assessments": dept["assessments"]
-                # }
-                # response = requests.put(f"{self.api_base_url}/departments/{dept['id']}", json=updated_dept)
-                # if response.status_code != 200:
-                #     raise Exception(f"API returned status {response.status_code}")
-
-                # Update in local departments list
-                for d in self.departments:
-                    if d["id"] == dept["id"]:
-                        d["name"] = name_field.value
-                        d["head"] = head_field.value
-                        d["risk_level"] = risk_level_dropdown.value
-                        break
-
-                # Update filtered departments
-                self.filter_departments(None)
-
-                # Close dialog
-                close_dialog(e)
-
-                # Show success message
-                self.show_status(f"Department '{name_field.value}' updated successfully")
-            except Exception as ex:
-                print(f"Error updating department: {ex}")
-                self.show_status(f"Error updating department: {str(ex)}", is_error=True)
+            self.page.run_task(
+                self._update_department_async,
+                dialog,
+                dept.get("id"),
+                name_field.value,
+                head_field.value,
+                risk_level_dropdown.value,
+                dept.get("assessments", 0),
+            )
 
         # Create dialog
         dialog = ft.AlertDialog(
@@ -547,47 +485,35 @@ class DepartmentsView(BaseView):
         )
 
         # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
+
+    async def _update_department_async(self, dialog, dept_id, name: str, head: str, risk_level: str, assessments: int):
+        try:
+            payload = {
+                "id": dept_id,
+                "name": name,
+                "head": head,
+                "riskLevelId": self._risk_level_to_id(risk_level),
+                "assessments": assessments,
+            }
+            await self.auditing_client.update_department(dept_id, payload)
+            self._close_dialog(dialog)
+            await self._load_departments_async()
+            self.show_status(f"Department '{name}' updated successfully")
+        except Exception as ex:
+            print(f"Error updating department: {ex}")
+            self.show_status(f"Error updating department: {str(ex)}", is_error=True)
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
 
     def delete_department(self, dept):
         # Define dialog close function
         def close_dialog(e):
-            dialog.open = False
-            self.page.update()
+            self._close_dialog(dialog)
 
         # Define delete function
         def confirm_delete(e):
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM departments WHERE id = %s", (dept["id"],))
-                conn.commit()
-                cursor.close()
-                conn.close()
-
-                # API version (commented out)
-                # response = requests.delete(f"{self.api_base_url}/departments/{dept['id']}")
-                # if response.status_code != 204:
-                #     raise Exception(f"API returned status {response.status_code}")
-
-                # Remove from local lists
-                self.departments = [d for d in self.departments if d["id"] != dept["id"]]
-                self.filtered_departments = [d for d in self.filtered_departments if d["id"] != dept["id"]]
-
-                # Close dialog
-                close_dialog(e)
-
-                # Update department cards
-                self.update_department_cards()
-
-                # Show success message
-                self.show_status(f"Department '{dept['name']}' deleted successfully")
-            except Exception as ex:
-                print(f"Error deleting department: {ex}")
-                self.show_status(f"Error deleting department: {str(ex)}", is_error=True)
+            self.page.run_task(self._delete_department_async, dialog, dept.get("id"), dept.get("name", "Department"))
 
         # Create dialog
         dialog = ft.AlertDialog(
@@ -601,202 +527,35 @@ class DepartmentsView(BaseView):
         )
 
         # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
 
-    def view_department_details(self, dept):
-        # Show loading indicator
-        self.loading_indicator.visible = True
-        self.update()
-
-        # Get risk color
-        risk_color = self.get_risk_color(dept["risk_level"])
-
-        # Create stats section
-        stats_row = ft.Row([
-            ft.Container(
-                padding=15,
-                border_radius=10,
-                bgcolor="white",
-                border=ft.border.all(1, "#EEEEEE"),
-                content=ft.Column([
-                    ft.Text(str(dept["assessments"]), size=24, weight=ft.FontWeight.BOLD, color="#3498db"),
-                            ft.Text("Assessments", size=14),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                width=120,
-            ),
-            ft.Container(width=10),
-            ft.Container(
-                padding=15,
-                border_radius=10,
-                bgcolor="white",
-                border=ft.border.all(1, "#EEEEEE"),
-                content=ft.Column([
-                    ft.Text(dept["risk_level"], size=24, weight=ft.FontWeight.BOLD, color=risk_color),
-                            ft.Text("Risk Level", size=14),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                width=120,
-            ),
-        ])
-
-        # Get assessments from database
-        department_assessments = []
+    async def _delete_department_async(self, dialog, dept_id, dept_name):
         try:
-            # Direct database connection
-            conn = get_db_connection()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("""
-                SELECT id, department_id, name, status
-                FROM assessments
-                WHERE department_id = %s
-                ORDER BY id DESC
-                LIMIT 3
-            """, (dept["id"],))
-            department_assessments = cursor.fetchall()
-            # Convert to regular dictionaries
-            department_assessments = [dict(a) for a in department_assessments]
-            cursor.close()
-            conn.close()
-
-            # API version (commented out)
-            # response = requests.get(f"{self.api_base_url}/departments/{dept['id']}/assessments")
-            # if response.status_code == 200:
-            #     department_assessments = response.json()
-            #     if len(department_assessments) > 3:
-            #         department_assessments = department_assessments[:3]
-        except Exception as e:
-            print(f"Error getting assessments: {e}")
-            department_assessments = []
-
-        # Hide loading indicator
-        self.loading_indicator.visible = False
-        self.update()
-
-        # Create recent assessments section
-        recent_assessments = ft.Column([
-            ft.Text("No recent assessments", size=14, color="#666666", italic=True)
-        ])
-
-        if department_assessments:
-            recent_assessments.controls = [
-                ft.Container(
-                    content=ft.Row([
-                        ft.Container(
-                            width=16,
-                            height=16,
-                            bgcolor="#3498db",
-                            border_radius=8,
-                            alignment=ft.alignment.center,
-                            content=ft.Text("A", color="white", size=10, weight=ft.FontWeight.BOLD)
-                        ),
-                        ft.Text(f"{assessment['name']} - {assessment['status']}", size=14),
-                    ]),
-                    padding=5,
-                )
-                for assessment in department_assessments
-            ]
-        elif dept["assessments"] > 0:  # Fallback if we have assessment count but no specific data
-            recent_assessments.controls = [
-                ft.Container(
-                    content=ft.Row([
-                        ft.Container(
-                            width=16,
-                            height=16,
-                            bgcolor="#3498db",
-                            border_radius=8,
-                            alignment=ft.alignment.center,
-                            content=ft.Text("A", color="white", size=10, weight=ft.FontWeight.BOLD)
-                        ),
-                        ft.Text(f"Assessment #{i + 1} - {['Completed', 'In Progress'][i % 2]}", size=14),
-                    ]),
-                    padding=5,
-                )
-                for i in range(min(dept["assessments"], 3))
-            ]
-
-        # Define dialog close function
-        def close_dialog(e):
-            dialog.open = False
+            await self.auditing_client.delete_department(dept_id)
+            self._close_dialog(dialog)
+            await self._load_departments_async()
+            self.show_status(f"Department '{dept_name}' deleted successfully")
+        except Exception as ex:
+            print(f"Error deleting department: {ex}")
+            self.show_status(f"Error deleting department: {str(ex)}", is_error=True)
+        if hasattr(self, 'page') and self.page:
             self.page.update()
 
-        # Define run assessment function
-        def run_assessment(e):
-            try:
-                # Direct database connection
-                conn = get_db_connection()
-                cursor = conn.cursor()
+    def view_department_details(self, dept):
+        colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        risk_color = self.get_risk_color(dept.get("risk_level"))
 
-                # Insert new assessment
-                cursor.execute("""
-                    INSERT INTO assessments (department_id, name, status)
-                    VALUES (%s, %s, %s)
-                """, (dept["id"], "Security Assessment", "In Progress"))
-
-                # Update department assessment count
-                cursor.execute("""
-                    UPDATE departments
-                    SET assessments = assessments + 1
-                    WHERE id = %s
-                """, (dept["id"],))
-
-                conn.commit()
-                cursor.close()
-                conn.close()
-
-                # API version (commented out)
-                # new_assessment = {
-                #     "department_id": dept["id"],
-                #     "name": "Security Assessment",
-                #     "status": "In Progress"
-                # }
-                # response = requests.post(f"{self.api_base_url}/assessments", json=new_assessment)
-                # if response.status_code == 201:
-                #     update_response = requests.patch(f"{self.api_base_url}/departments/{dept['id']}/increment-assessments")
-                #     if update_response.status_code != 200:
-                #         raise Exception(f"Error updating assessment count: {update_response.status_code}")
-
-                # Update local data
-                for d in self.departments:
-                    if d["id"] == dept["id"]:
-                        d["assessments"] += 1
-                        break
-
-                # Close dialog
-                close_dialog(e)
-
-                # Update department cards
-                self.update_department_cards()
-
-                # Show success message
-                self.show_status(f"Started new assessment for '{dept['name']}'")
-            except Exception as ex:
-                print(f"Error starting assessment: {ex}")
-                self.show_status(f"Error starting assessment: {str(ex)}", is_error=True)
-
-        # Create dialog
         dialog = ft.AlertDialog(
-            title=ft.Text(f"Department Details: {dept['name']}"),
+            title=ft.Text(f"Department: {dept.get('name', '-') }"),
             content=ft.Column([
-                ft.Text(f"Department Head: {dept['head']}", size=16),
-                ft.Container(height=20),
-                ft.Text("Department Statistics", size=16, weight=ft.FontWeight.BOLD),
-                stats_row,
-                ft.Container(height=20),
-                ft.Text("Recent Assessments", size=16, weight=ft.FontWeight.BOLD),
-                recent_assessments,
-            ], height=300, scroll=ft.ScrollMode.AUTO),
-            actions=[
-                ft.TextButton("Close", on_click=close_dialog),
-                ft.ElevatedButton("Run Assessment", on_click=run_assessment, bgcolor="#3498db", color="white"),
-            ],
+                ft.Row([ft.Text("Head:", weight=ft.FontWeight.BOLD), ft.Text(str(dept.get("head", "-")))]),
+                ft.Row([ft.Text("Risk Level:", weight=ft.FontWeight.BOLD), ft.Text(str(dept.get("risk_level", "-")), color=risk_color)]),
+                ft.Row([ft.Text("Assessments:", weight=ft.FontWeight.BOLD), ft.Text(str(dept.get("assessments", 0)))]),
+            ], tight=True, spacing=10),
+            actions=[ft.TextButton("Close", on_click=lambda e: self._close_dialog(dialog))],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-
-        # Show dialog
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self._open_dialog(dialog)
 
     def show_status(self, message, is_error=False):
         # Set message color and background

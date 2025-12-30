@@ -43,7 +43,17 @@ AUDITING_ENDPOINTS = {
     "start_control_testing": "/RiskAssessment/StartControlTesting",
     "get_heatmap": "/RiskGraphs/GetHeatmap",
     "get_departments": "/RiskAssessment/GetDepartments",
-    "get_projects": "/RiskAssessment/GetProjects"
+    "get_projects": "/RiskAssessment/GetProjects",
+
+    # Departments CRUD
+    "create_department": "/RiskAssessment/CreateDepartment",
+    "update_department": "/RiskAssessment/UpdateDepartment",
+    "delete_department": "/RiskAssessment/DeleteDepartment",
+
+    # Projects CRUD
+    "create_project": "/RiskAssessment/CreateProject",
+    "update_project": "/RiskAssessment/UpdateProject",
+    "delete_project": "/RiskAssessment/DeleteProject"
 }
 
 # API endpoints for Identity API

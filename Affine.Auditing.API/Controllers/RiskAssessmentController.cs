@@ -59,6 +59,148 @@ namespace Affina.Auditing.API.Controllers
             }
         }
 
+        [HttpPost]
+        [Route("CreateDepartment")]
+        public async Task<IActionResult> CreateDepartment([FromBody] Affine.Engine.Model.Auditing.Department department)
+        {
+            if (department == null)
+                return BadRequest("Department data is required.");
+
+            if (string.IsNullOrWhiteSpace(department.Name))
+                return BadRequest("Department name is required.");
+
+            try
+            {
+                var created = await _riskAssessmentRepository.CreateDepartmentAsync(department);
+                return Ok(created);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while creating department: {ex.Message}");
+            }
+        }
+
+        [HttpPut]
+        [Route("UpdateDepartment/{id}")]
+        public async Task<IActionResult> UpdateDepartment(int id, [FromBody] Affine.Engine.Model.Auditing.Department department)
+        {
+            if (id <= 0)
+                return BadRequest("Department ID must be greater than zero.");
+
+            if (department == null)
+                return BadRequest("Department data is required.");
+
+            if (string.IsNullOrWhiteSpace(department.Name))
+                return BadRequest("Department name is required.");
+
+            try
+            {
+                department.Id = id;
+                var updated = await _riskAssessmentRepository.UpdateDepartmentAsync(department);
+                if (updated == null)
+                    return NotFound($"Department with ID {id} not found.");
+                return Ok(updated);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while updating department: {ex.Message}");
+            }
+        }
+
+        [HttpDelete]
+        [Route("DeleteDepartment/{id}")]
+        public async Task<IActionResult> DeleteDepartment(int id)
+        {
+            if (id <= 0)
+                return BadRequest("Department ID must be greater than zero.");
+
+            try
+            {
+                var deleted = await _riskAssessmentRepository.DeleteDepartmentAsync(id);
+                if (!deleted)
+                    return NotFound($"Department with ID {id} not found.");
+                return Ok(new { Success = true });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while deleting department: {ex.Message}");
+            }
+        }
+
+        [HttpPost]
+        [Route("CreateProject")]
+        public async Task<IActionResult> CreateProject([FromBody] Affine.Engine.Model.Auditing.Project project)
+        {
+            if (project == null)
+                return BadRequest("Project data is required.");
+
+            if (string.IsNullOrWhiteSpace(project.Name))
+                return BadRequest("Project name is required.");
+
+            if (!project.StatusId.HasValue || project.StatusId.Value <= 0)
+                return BadRequest("StatusId is required.");
+
+            try
+            {
+                var created = await _riskAssessmentRepository.CreateProjectAsync(project);
+                return Ok(created);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while creating project: {ex.Message}");
+            }
+        }
+
+        [HttpPut]
+        [Route("UpdateProject/{id}")]
+        public async Task<IActionResult> UpdateProject(int id, [FromBody] Affine.Engine.Model.Auditing.Project project)
+        {
+            if (id <= 0)
+                return BadRequest("Project ID must be greater than zero.");
+
+            if (project == null)
+                return BadRequest("Project data is required.");
+
+            if (string.IsNullOrWhiteSpace(project.Name))
+                return BadRequest("Project name is required.");
+
+            if (!project.StatusId.HasValue || project.StatusId.Value <= 0)
+                return BadRequest("StatusId is required.");
+
+            try
+            {
+                project.Id = id;
+                var updated = await _riskAssessmentRepository.UpdateProjectAsync(project);
+                if (updated == null)
+                    return NotFound($"Project with ID {id} not found.");
+                return Ok(updated);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while updating project: {ex.Message}");
+            }
+        }
+
+        [HttpDelete]
+        [Route("DeleteProject/{id}")]
+        public async Task<IActionResult> DeleteProject(int id)
+        {
+            if (id <= 0)
+                return BadRequest("Project ID must be greater than zero.");
+
+            try
+            {
+                var deleted = await _riskAssessmentRepository.DeleteProjectAsync(id);
+                if (!deleted)
+                    return NotFound($"Project with ID {id} not found.");
+                return Ok(new { Success = true });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An unexpected error occurred while deleting project: {ex.Message}");
+            }
+        }
+
         [HttpGet]
         [Route("GetAssessments")]
         public async Task<IActionResult> GetAssessments()
