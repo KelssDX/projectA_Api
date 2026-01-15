@@ -514,29 +514,27 @@ class ProjectsView(BaseView):
             border_radius=5
         )
 
-        # Get departments for dropdown (synchronously from async)
-        departments = []
-        try:
-            import asyncio as _asyncio
-            loop = _asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an event loop, skip immediate population
-                departments = []
-            else:
-                departments = loop.run_until_complete(self.get_departments())
-        except Exception:
-            departments = []
-        department_options = [ft.dropdown.Option("None", "0")]
-        department_options.extend([
-            ft.dropdown.Option(d.get("name"), str(d.get("id"))) for d in (departments or []) if isinstance(d, dict)
-        ])
-
         department_dropdown = ft.Dropdown(
             label="Department",
-            options=department_options,
+            options=[ft.dropdown.Option("None", "0")],
             value="0",
             width=200
         )
+
+        async def load_depts():
+            try:
+                depts = await self.get_departments()
+                if depts:
+                    department_dropdown.options = [ft.dropdown.Option("None", "0")]
+                    department_dropdown.options.extend([
+                        ft.dropdown.Option(d.get("name"), str(d.get("id"))) for d in depts if isinstance(d, dict)
+                    ])
+                    department_dropdown.update()
+            except Exception as ex:
+                print(f"Error loading departments in dialog: {ex}")
+
+        if self.page:
+            self.page.run_task(load_depts)
 
         status_dropdown = ft.Dropdown(
             label="Status",
@@ -728,28 +726,27 @@ class ProjectsView(BaseView):
             border_radius=5
         )
 
-        # Get departments for dropdown (synchronously from async)
-        departments = []
-        try:
-            import asyncio as _asyncio
-            loop = _asyncio.get_event_loop()
-            if loop.is_running():
-                departments = []
-            else:
-                departments = loop.run_until_complete(self.get_departments())
-        except Exception:
-            departments = []
-        department_options = [ft.dropdown.Option("None", "0")]
-        department_options.extend([
-            ft.dropdown.Option(d.get("name"), str(d.get("id"))) for d in (departments or []) if isinstance(d, dict)
-        ])
-
         department_dropdown = ft.Dropdown(
             label="Department",
-            options=department_options,
+            options=[ft.dropdown.Option("None", "0")],
             value=str(proj["department_id"]) if proj["department_id"] else "0",
             width=200
         )
+
+        async def load_depts_edit():
+            try:
+                depts = await self.get_departments()
+                if depts:
+                    department_dropdown.options = [ft.dropdown.Option("None", "0")]
+                    department_dropdown.options.extend([
+                        ft.dropdown.Option(d.get("name"), str(d.get("id"))) for d in depts if isinstance(d, dict)
+                    ])
+                    department_dropdown.update()
+            except Exception as ex:
+                print(f"Error loading departments in edit dialog: {ex}")
+
+        if self.page:
+            self.page.run_task(load_depts_edit)
 
         status_dropdown = ft.Dropdown(
             label="Status",

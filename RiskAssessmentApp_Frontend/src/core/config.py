@@ -42,8 +42,14 @@ AUDITING_ENDPOINTS = {
     "update_reference": "/RiskAssessment/UpdateReference",
     "start_control_testing": "/RiskAssessment/StartControlTesting",
     "get_heatmap": "/RiskGraphs/GetHeatmap",
+    "get_analytical_report": "/RiskGraphs/GetAnalyticalReport",
+    "get_market_insights": "/RiskGraphs/GetMarketInsights",
+    "get_top_risks": "/RiskGraphs/GetTopRisks",
+    "get_correlation_matrix": "/RiskGraphs/GetCorrelationMatrix",
+    "get_operational_risks": "/OperationalRisk/GetOperationalRisks",
     "get_departments": "/RiskAssessment/GetDepartments",
     "get_projects": "/RiskAssessment/GetProjects",
+    "seed_market_data": "/MarketRisk/SeedData",
 
     # Departments CRUD
     "create_department": "/RiskAssessment/CreateDepartment",

@@ -51,10 +51,11 @@ class Sidebar(ft.Container):
             {"text": "Dashboard", "index": 0, "icon": Icons.DASHBOARD_OUTLINED},
             {"text": "Assessments", "index": 1, "icon": Icons.FACT_CHECK},
             {"text": "Risk Heatmap", "index": 2, "icon": Icons.GRID_ON},
-            {"text": "Departments", "index": 3, "icon": Icons.DOMAIN},
-            {"text": "Projects", "index": 4, "icon": Icons.WORK_OUTLINE},
-            {"text": "Users", "index": 5, "icon": Icons.ADMIN_PANEL_SETTINGS},
-            {"text": "Settings", "index": 6, "icon": Icons.SETTINGS_OUTLINED},
+            {"text": "Analytical Report", "index": 3, "icon": Icons.ANALYTICS},
+            {"text": "Departments", "index": 4, "icon": Icons.DOMAIN},
+            {"text": "Projects", "index": 5, "icon": Icons.WORK_OUTLINE},
+            {"text": "Users", "index": 6, "icon": Icons.ADMIN_PANEL_SETTINGS},
+            {"text": "Settings", "index": 7, "icon": Icons.SETTINGS_OUTLINED},
         ]
         
         self.menu_containers = []

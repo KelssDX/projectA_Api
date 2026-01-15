@@ -1,5 +1,8 @@
 using Affine.Engine.Repository.Auditing;
 using Affine.Engine.Repository.Identity;
+using Affine.Engine.Repository.Market;
+using Affine.Engine.Repository.Operational;
+using Affine.Engine.Services;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +28,18 @@ builder.Services.AddScoped<IRiskAssessmentRepository, RiskAssessmentRepository>(
 
 builder.Services.AddScoped<IRiskHeatMapRepository, RiskHeatMapRepository>(provider =>
     new RiskHeatMapRepository (builder.Configuration.GetConnectionString("RiskAssessment")));
+
+// New Risk Services
+builder.Services.AddScoped<IMarketDataRepository, MarketDataRepository>(provider =>
+    new MarketDataRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IOperationalRiskRepository, OperationalRiskRepository>(provider =>
+    new OperationalRiskRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddHttpClient<IAlphaVantageService, AlphaVantageService>();
+
+builder.Services.AddScoped<Affine.Engine.Repository.Analytics.IAnalyticsRepository, Affine.Engine.Repository.Analytics.AnalyticsRepository>(provider =>
+    new Affine.Engine.Repository.Analytics.AnalyticsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
 
 builder.Services.AddControllers();
 

@@ -60,12 +60,13 @@ class EnhancedHeatmapWorkspace(ft.Container):
     def _init_workspace(self):
         """Initialize the enhanced workspace"""
         self._build_workspace_ui()
-        asyncio.create_task(self._load_workspace_data())
+        if self.page:
+            self.page.run_task(self._load_workspace_data)
         
-        # Start background tasks
-        if self.real_time_updates:
-            asyncio.create_task(self._start_real_time_updates())
-        asyncio.create_task(self._start_auto_save_monitor())
+            # Start background tasks
+            if self.real_time_updates:
+                self.page.run_task(self._start_real_time_updates)
+            self.page.run_task(self._start_auto_save_monitor)
     
     async def _load_workspace_data(self):
         """Load comprehensive workspace data"""

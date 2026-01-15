@@ -111,10 +111,8 @@ class UnifiedAssessmentForm(BaseView):
             self._load_assessment_data()
             
         try:
-            if hasattr(self.page, "run_task"):
+            if self.page:
                 self.page.run_task(self._load_lookups)
-            else:
-                asyncio.create_task(self._load_lookups())
         except Exception:
             pass
 
@@ -795,11 +793,8 @@ class UnifiedAssessmentForm(BaseView):
             if hasattr(self.assessment, 'department'):
                 self.process_tf.value = self.assessment.department
             
-            if hasattr(self.assessment, 'id'):
-                if hasattr(self.page, "run_task"):
-                    self.page.run_task(self._load_risk_assessments_async, self.assessment.id)
-                else:
-                    asyncio.create_task(self._load_risk_assessments_async(self.assessment.id))
+            if hasattr(self.assessment, 'id') and self.page:
+                self.page.run_task(self._load_risk_assessments_async, self.assessment.id)
                     
             self.page.update()
             print("DEBUG: Assessment data loaded into form")

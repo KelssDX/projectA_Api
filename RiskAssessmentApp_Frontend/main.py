@@ -10,6 +10,7 @@ from src.views.users.user_management import UserManagementView
 from src.views.departments.departments_view import DepartmentsView
 from src.views.projects.projects_view import ProjectsView
 from src.views.dashboard.modern_heatmap_dashboard import ModernHeatmapDashboard
+from src.views.analytics.analytical_dashboard import AnalyticalDashboard
 from src.core.config import get_db_connection
 from src.controllers.auth_controller import AuthController
 from src.controllers.assessment_controller import AssessmentController
@@ -77,10 +78,11 @@ class RiskAssessmentApp:
                     0: "dashboard",
                     1: "assessments", 
                     2: "heatmap",
-                    3: "departments",
-                    4: "projects",
-                    5: "users",
-                    6: "settings"
+                    3: "analytics",
+                    4: "departments",
+                    5: "projects",
+                    6: "users",
+                    7: "settings"
                 }
                 view_name = view_map.get(index, "dashboard")
                 self.show_view(view_name)
@@ -389,7 +391,7 @@ class RiskAssessmentApp:
                             print(f"DEBUG [BEFORE NAV]: Sidebar exists")
                         
                         self.current_nav_index = index
-                        view_map = {0: "dashboard", 1: "assessments", 2: "heatmap", 3: "departments", 4: "projects", 5: "users", 6: "settings"}
+                        view_map = {0: "dashboard", 1: "assessments", 2: "heatmap", 3: "analytics", 4: "departments", 5: "projects", 6: "users", 7: "settings"}
                         view_name = view_map.get(index, "dashboard")
                         self.show_view(view_name)
                         if hasattr(self.sidebar, 'update_selection'):
@@ -527,6 +529,20 @@ class RiskAssessmentApp:
                             padding=20,
                             expand=True
                         )
+                elif view_name == "analytics":
+                    try:
+                        analytics_view = AnalyticalDashboard(
+                            self.page, 
+                            self.current_user
+                        )
+                        self.views[view_name] = analytics_view
+                    except Exception as e:
+                        print(f"Error creating analytics view: {e}")
+                        self.views[view_name] = ft.Container(
+                            content=ft.Text(f"Error loading analytics view: {str(e)}", color=ft.Colors.RED),
+                            padding=20,
+                            expand=True
+                        )
                 elif view_name == "settings":
                     self.views[view_name] = self.create_settings_view()
 
@@ -561,16 +577,24 @@ class RiskAssessmentApp:
                             self.views[view_name].load_data()
                     except Exception:
                         pass
+                # If analytics selected, load its data
+                elif view_name == "analytics":
+                    try:
+                        if hasattr(self.views[view_name], "load_data"):
+                            self.views[view_name].load_data()
+                    except Exception:
+                        pass
                 # Keep sidebar selection in sync when navigating programmatically
                 try:
                     index_map = {
                         "dashboard": 0,
                         "assessments": 1,
                         "heatmap": 2,
-                        "departments": 3,
-                        "projects": 4,
-                        "users": 5,
-                        "settings": 6,
+                        "analytics": 3,
+                        "departments": 4,
+                        "projects": 5,
+                        "users": 6,
+                        "settings": 7,
                     }
                     new_index = index_map.get(view_name, self.current_nav_index)
                     self.current_nav_index = new_index
@@ -716,6 +740,7 @@ class RiskAssessmentApp:
                 Icons.DASHBOARD_OUTLINED,     # Dashboard - Clean dashboard outline
                 Icons.FACT_CHECK,             # Assessments - Professional fact check/audit icon
                 Icons.GRID_ON,                # Risk Heatmap - Clean grid for matrix view
+                Icons.INSERT_CHART,           # Analytical Report
                 Icons.DOMAIN,                 # Departments - Corporate building/domain
                 Icons.WORK_OUTLINE,           # Projects - Professional work briefcase outline
                 Icons.ADMIN_PANEL_SETTINGS,   # Users - Admin panel for user management
@@ -725,10 +750,11 @@ class RiskAssessmentApp:
                 {"text": "Dashboard", "index": 0},
                 {"text": "Assessments", "index": 1},
                 {"text": "Risk Heatmap", "index": 2},
-                {"text": "Departments", "index": 3},
-                {"text": "Projects", "index": 4},
-                {"text": "Users", "index": 5},
-                {"text": "Settings", "index": 6},
+                {"text": "Analytical Report", "index": 3},
+                {"text": "Departments", "index": 4},
+                {"text": "Projects", "index": 5},
+                {"text": "Users", "index": 6},
+                {"text": "Settings", "index": 7},
             ]
             
             for i, menu_item in enumerate(self.menu_containers):
@@ -804,10 +830,11 @@ class RiskAssessmentApp:
                 0: "dashboard",
                 1: "assessments",
                 2: "heatmap",
-                3: "departments",
-                4: "projects",
-                5: "users",
-                6: "settings",
+                3: "analytics",
+                4: "departments",
+                5: "projects",
+                6: "users",
+                7: "settings",
             }
             current = view_map.get(self.current_nav_index, "dashboard")
             self.views = {}

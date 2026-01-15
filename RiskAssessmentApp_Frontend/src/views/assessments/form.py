@@ -744,7 +744,8 @@ class AssessmentFormView(BaseView):
 
         # Persist via API
         # Start async save to backend
-        asyncio.create_task(self._save_to_backend_async())
+        if self.page:
+            self.page.run_task(self._save_to_backend_async)
 
         # Close the loading dialog
         self.close_dialog()

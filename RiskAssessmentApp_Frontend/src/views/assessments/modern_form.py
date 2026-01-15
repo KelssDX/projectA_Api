@@ -43,10 +43,10 @@ class ModernAssessmentForm(BaseView):
 
         # Initialize form
         self._init_form()
-    
     def _init_form(self):
         """Initialize the form components"""
-        asyncio.create_task(self._load_lookup_data())
+        if self.page:
+            self.page.run_task(self._load_lookup_data)
         self._build_ui()
 
     def apply_theme(self, colors):

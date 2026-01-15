@@ -982,11 +982,14 @@ namespace Affine.Engine.Repository.Auditing
                              ref.approved_by, ref.created_date, ref.updated_at
                     ORDER BY ref.assessment_start_date DESC";
 
-                var result = await dbConnection.QueryAsync(query);
-                return result ?? Enumerable.Empty<object>();
+                var queryResult = await dbConnection.QueryAsync(query);
+                var resultList = queryResult.ToList();
+                Console.WriteLine($"DEBUG: [RiskAssessmentRepository] GetAssessmentsAsync found {resultList.Count} assessments.");
+                return resultList ?? Enumerable.Empty<object>();
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"DEBUG: [RiskAssessmentRepository] GetAssessmentsAsync ERROR: {ex.Message}");
                 throw new InvalidOperationException($"Failed to retrieve assessments. Error: {ex.Message}", ex);
             }
         }

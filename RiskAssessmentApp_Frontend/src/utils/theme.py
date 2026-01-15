@@ -32,6 +32,9 @@ class ThemeColors:
     button_secondary: str
     button_text: str
     glass_bg: str
+    primary_container: str
+    success_container: str
+    warning_container: str
 
 
 def get_theme_colors(mode: ft.ThemeMode) -> ThemeColors:
@@ -63,7 +66,10 @@ def get_theme_colors(mode: ft.ThemeMode) -> ThemeColors:
             button_primary="#3B82F6",  # Primary button
             button_secondary="#475569",  # Secondary button
             button_text="#FFFFFF",  # Button text
-            glass_bg="#1E293B80"  # Glass effect
+            glass_bg="#1E293B80",  # Glass effect
+            primary_container="#1E3A8A40", # Subtle blue
+            success_container="#064E3B40", # Subtle emerald
+            warning_container="#78350F40"  # Subtle amber
         )
     else:
         return ThemeColors(
@@ -91,7 +97,10 @@ def get_theme_colors(mode: ft.ThemeMode) -> ThemeColors:
             button_primary="#3B82F6",  # Primary button
             button_secondary="#E5E7EB",  # Secondary button
             button_text="#FFFFFF",  # Button text
-            glass_bg="#FFFFFF90"  # Glass effect
+            glass_bg="#FFFFFF90",  # Glass effect
+            primary_container="#DBEAFE", # Very light blue
+            success_container="#D1FAE5", # Very light emerald
+            warning_container="#FEF3C7"  # Very light amber
         )
 
 
@@ -439,22 +448,31 @@ def create_stat_card(colors, title, value, icon, color_accent, on_click=None):
     )
 
 
-def create_modern_card(colors, content, padding=None, border_radius=16, elevation=1):
+def create_modern_card(colors, content, padding=None, border_radius=16, elevation=1, expand=None, width=None):
     """Create a modern card with subtle shadow"""
     shadow_blur = 8 if elevation == 1 else 16 if elevation == 2 else 24
     shadow_offset = 2 if elevation == 1 else 4 if elevation == 2 else 8
 
-    return ft.Container(
-        content=content,
-        padding=padding or ft.padding.all(20),
-        bgcolor=colors.card_bg,
-        border_radius=border_radius,
-        border=ft.border.all(1, colors.border),
-        expand=True,
-        shadow=ft.BoxShadow(
+    container_kwargs = {
+        "content": content,
+        "padding": padding or ft.padding.all(20),
+        "bgcolor": colors.card_bg,
+        "border_radius": border_radius,
+        "border": ft.border.all(1, colors.border),
+        "shadow": ft.BoxShadow(
             spread_radius=0,
             blur_radius=shadow_blur,
             color=colors.shadow,
             offset=ft.Offset(0, shadow_offset)
         )
-    )
+    }
+    
+    if expand is not None:
+        container_kwargs["expand"] = expand
+    else:
+        container_kwargs["expand"] = True
+    
+    if width is not None:
+        container_kwargs["width"] = width
+
+    return ft.Container(**container_kwargs)

@@ -2,6 +2,12 @@ import aiohttp
 import asyncio
 import json
 from src.core.config import API_CONFIG, get_auditing_api_url
+from src.data.mock_data import (
+    MOCK_ANALYTICAL_REPORT, 
+    MOCK_MARKET_DATA, 
+    MOCK_MARKET_METRICS, 
+    MOCK_TOP_RISKS
+)
 
 
 class AuditingAPIClient:
@@ -135,12 +141,16 @@ class AuditingAPIClient:
         await self._ensure_session()
         
         url = get_auditing_api_url("get_assessments")
+        print(f"DEBUG: [AuditingAPIClient] Fetching assessments from: {url}")
         
         try:
             async with self.session.get(url) as response:
+                print(f"DEBUG: [AuditingAPIClient] Response Status: {response.status}")
                 if response.status == 200:
                     raw = await response.json()
+                    print(f"DEBUG: [AuditingAPIClient] Raw response count: {len(raw) if isinstance(raw, list) else 'NOT A LIST'}")
                     if not isinstance(raw, list):
+                        print(f"DEBUG: [AuditingAPIClient] ERROR: Expected list but got {type(raw)}")
                         return []
                     normalized = []
                     for item in raw:
@@ -600,7 +610,134 @@ class AuditingAPIClient:
                     
         except aiohttp.ClientError as e:
             raise Exception(f"Connection error: {str(e)}")
+
+    async def get_analytical_report(self, reference_id):
+        """Get analytical report data for a reference"""
+        await self._ensure_session()
+        
+        url = get_auditing_api_url("get_analytical_report")
+        params = {"referenceId": reference_id}
+        
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 404:
+                    return None
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to get analytical report: {error_text}")
+                    
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def seed_market_data(self):
+        """Trigger market data seeding"""
+        await self._ensure_session()
+        
+        url = get_auditing_api_url("seed_market_data") 
+
+        try:
+            async with self.session.post(url) as response:
+                if response.status == 200: return True
+                else: 
+                     # Non-critical, just log or ignore for now to prevent crash
+                     print(f"Seed warning: {await response.text()}")
+                     return False
+        except Exception as e:
+            print(f"Seed error: {e}")
+            return False
+
+    async def get_share_price_data(self, symbol):
+        """Get share price history for a symbol"""
+        await self._ensure_session()
+        url = get_auditing_api_url("seed_market_data").replace("SeedData", "GetSharePriceData") # Hacky but works given the structure
+        # Better: Add to config, but for speed:
+        base = self.base_url.rstrip('/')
+        url = f"{base}/MarketRisk/GetSharePriceData"
+        
+        params = {"symbol": symbol}
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200: return await response.json()
+                else: return []
+        except Exception as e:
+            print(f"Error fetching price data: {e}")
+            return []
+
+    async def calculate_risk_metrics(self, symbol):
+        """Get calculated risk metrics"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/MarketRisk/CalculateRiskMetrics"
+        
+        params = {"symbol": symbol}
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200: return await response.json()
+                else: return {}
+        except Exception as e:
+            print(f"Error fetching risk metrics: {e}")
+            return {}
+
+    async def get_market_insights(self, symbol="IBM"):
+        """Get market volatility and risk metrics"""
+        await self._ensure_session()
+        url = get_auditing_api_url("get_market_insights")
+        params = {"symbol": symbol}
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200: return await response.json()
+                else: raise Exception(await response.text())
+        except aiohttp.ClientError as e: raise Exception(f"Error: {e}")
+
+    async def get_top_risks(self, count=10, reference_id=None):
+        """Get top residual risks"""
+        await self._ensure_session()
+        url = get_auditing_api_url("get_top_risks")
+        params = {"count": count}
+        if reference_id:
+            params["referenceId"] = reference_id
+            
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200: return await response.json()
+                else: raise Exception(await response.text())
+        except aiohttp.ClientError as e: raise Exception(f"Error: {e}")
+
+    async def get_correlation_matrix(self):
+        """Get correlation matrix"""
+        await self._ensure_session()
+        url = get_auditing_api_url("get_correlation_matrix")
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200: return await response.json()
+                else: raise Exception(await response.text())
+        except aiohttp.ClientError as e: raise Exception(f"Error: {e}")
+
+    async def get_operational_risks(self, reference_id):
+        """Get operational risks for a reference"""
+        await self._ensure_session()
+        url = get_auditing_api_url("get_operational_risks")
+        params = {"referenceId": reference_id}
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200: return await response.json()
+                else: raise Exception(await response.text())
+        except aiohttp.ClientError as e: raise Exception(f"Error: {e}")
     
+    async def get_mock_analytical_report(self):
+        return MOCK_ANALYTICAL_REPORT
+
+    async def get_mock_market_data(self):
+        return MOCK_MARKET_DATA
+
+    async def get_mock_market_metrics(self):
+        return MOCK_MARKET_METRICS
+
+    async def get_mock_top_risks(self):
+        return MOCK_TOP_RISKS
+
     async def close(self):
         """Close the HTTP session"""
         if self.session and not self.session.closed:

@@ -12,6 +12,7 @@ from src.models.assessment import Assessment
 from datetime import datetime
 from src.api.auditing_client import AuditingAPIClient
 from src.views.assessments.unified_form import UnifiedAssessmentForm
+from src.views.assessments.operational_risk_assessment import OperationalRiskComponent
 
 
 class AssessmentListView(BaseView):
@@ -95,12 +96,46 @@ class AssessmentListView(BaseView):
             content=None  # Will be set in refresh_table
         )
 
-        # Compose under BaseView as cards
+        # Compose Tabs
+        self.standard_content = ft.Column([
+            action_bar,
+            ft.Container(height=10),
+            self.assessments_table_container
+        ], expand=True)
+
+        self.op_risk_content = OperationalRiskComponent(page, user)
+
+        self.tabs = ft.Tabs(
+            selected_index=0,
+            animation_duration=300,
+            tabs=[
+                ft.Tab(
+                    text="Standard Assessments",
+                    icon=Icons.ASSIGNMENT,
+                    content=ft.Container(
+                        content=self.standard_content,
+                        padding=20
+                    )
+                ),
+                ft.Tab(
+                    text="Operational Risk",
+                    icon=Icons.WARNING,
+                    content=ft.Container(
+                        content=self.op_risk_content,
+                        padding=20
+                    )
+                ),
+            ],
+            expand=True
+        )
+
+        # Clear base view cards and add Tabs directly
         self.cards_column.controls.clear()
-        self.add_card(action_bar)
+        # We use a container to host tabs to ensure expansion
+        self.add_card(ft.Container(content=self.tabs, height=600))
+        
         # Initial table
         self.refresh_table()
-        self.add_card(self.assessments_table_container)
 
     def load_data(self):
         """Load assessments data when view is shown"""
@@ -710,17 +745,8 @@ class AssessmentListView(BaseView):
         print(f"DEBUG: Using reference_id: {reference_id} to call API")
         
         # Call the API to get full assessment details
-        if hasattr(self.page, "run_task"):
+        if self.page:
             self.page.run_task(self._load_assessment_details_async, reference_id, assessment_id)
-        else:
-            # Fallback for environments without run_task
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                loop.create_task(self._load_assessment_details_async(reference_id, assessment_id))
-            except RuntimeError:
-                # If no event loop, create a new one
-                asyncio.run(self._load_assessment_details_async(reference_id, assessment_id))
 
     async def _load_assessment_details_async(self, reference_id, assessment_id):
         """Load assessment details from API asynchronously"""
