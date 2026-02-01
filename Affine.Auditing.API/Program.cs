@@ -41,6 +41,13 @@ builder.Services.AddHttpClient<IAlphaVantageService, AlphaVantageService>();
 builder.Services.AddScoped<Affine.Engine.Repository.Analytics.IAnalyticsRepository, Affine.Engine.Repository.Analytics.AnalyticsRepository>(provider =>
     new Affine.Engine.Repository.Analytics.AnalyticsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
 
+// Audit Universe and Findings Repositories
+builder.Services.AddScoped<IAuditUniverseRepository, AuditUniverseRepository>(provider =>
+    new AuditUniverseRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditFindingsRepository, AuditFindingsRepository>(provider =>
+    new AuditFindingsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
 builder.Services.AddControllers();
 
 // Add configuration for workflow service

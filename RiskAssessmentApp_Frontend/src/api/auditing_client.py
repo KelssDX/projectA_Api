@@ -2,12 +2,7 @@ import aiohttp
 import asyncio
 import json
 from src.core.config import API_CONFIG, get_auditing_api_url
-from src.data.mock_data import (
-    MOCK_ANALYTICAL_REPORT, 
-    MOCK_MARKET_DATA, 
-    MOCK_MARKET_METRICS, 
-    MOCK_TOP_RISKS
-)
+
 
 
 class AuditingAPIClient:
@@ -611,6 +606,12 @@ class AuditingAPIClient:
         except aiohttp.ClientError as e:
             raise Exception(f"Connection error: {str(e)}")
 
+    async def get_heatmap_data(self, reference_id, audit_universe_id=None):
+        """Alias for get_heatmap to support new widget interface"""
+        # Map audit_universe_id to department_id if applicable, or ignore for now
+        # Assuming audit_universe_id corresponds to department_id for this API
+        return await self.get_heatmap(reference_id, department_id=audit_universe_id)
+
     async def get_analytical_report(self, reference_id):
         """Get analytical report data for a reference"""
         await self._ensure_session()
@@ -726,17 +727,276 @@ class AuditingAPIClient:
                 else: raise Exception(await response.text())
         except aiohttp.ClientError as e: raise Exception(f"Error: {e}")
     
-    async def get_mock_analytical_report(self):
-        return MOCK_ANALYTICAL_REPORT
 
-    async def get_mock_market_data(self):
-        return MOCK_MARKET_DATA
 
-    async def get_mock_market_metrics(self):
-        return MOCK_MARKET_METRICS
+    # =====================================================
+    # AUDIT UNIVERSE METHODS
+    # =====================================================
 
-    async def get_mock_top_risks(self):
-        return MOCK_TOP_RISKS
+    async def get_audit_universe_hierarchy(self):
+        """Get the full audit universe hierarchy as a tree"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/GetHierarchy"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to get hierarchy: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_audit_universe_flat(self):
+        """Get the audit universe as a flat list with paths"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/GetFlatHierarchy"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return []
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_audit_universe_node(self, node_id):
+        """Get a single audit universe node by ID"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/GetNode/{node_id}"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 404:
+                    return None
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to get node: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_audit_universe_node_with_children(self, node_id):
+        """Get a node with its immediate children"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/GetNodeWithChildren/{node_id}"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return None
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def create_audit_universe_node(self, node_data):
+        """Create a new audit universe node"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/CreateNode"
+        try:
+            async with self.session.post(url, json=node_data) as response:
+                if response.status in [200, 201]:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to create node: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def update_audit_universe_node(self, node_id, node_data):
+        """Update an existing audit universe node"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/UpdateNode/{node_id}"
+        try:
+            async with self.session.put(url, json=node_data) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"Failed to update node: {error_text}")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def delete_audit_universe_node(self, node_id):
+        """Delete an audit universe node"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/DeleteNode/{node_id}"
+        try:
+            async with self.session.delete(url) as response:
+                if response.status == 200:
+                    return True
+                else:
+                    return False
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_audit_universe_levels(self):
+        """Get all level definitions"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/GetLevels"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return []
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def search_audit_universe(self, query):
+        """Search audit universe nodes"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/Search"
+        params = {"query": query}
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return []
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def link_department_to_node(self, audit_universe_id, department_id):
+        """Link a department to an audit universe node"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/LinkDepartment"
+        data = {"auditUniverseId": audit_universe_id, "departmentId": department_id}
+        try:
+            async with self.session.post(url, json=data) as response:
+                return response.status == 200
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_linked_departments(self, node_id):
+        """Get departments linked to a node"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditUniverse/GetLinkedDepartments/{node_id}"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return []
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    # =====================================================
+    # AUDIT FINDINGS METHODS
+    # =====================================================
+
+    async def get_findings_aging(self, reference_id=None, audit_universe_id=None):
+        """Get findings aging analysis"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditFindings/GetFindingsAging"
+        params = {}
+        if reference_id:
+            params["referenceId"] = reference_id
+        if audit_universe_id:
+            params["auditUniverseId"] = audit_universe_id
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return None
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_audit_coverage_map(self, year, quarter=None):
+        """Get audit coverage map for visualization"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditFindings/GetAuditCoverageMap"
+        params = {"year": year}
+        if quarter:
+            params["quarter"] = quarter
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return None
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_risk_trend(self, reference_id=None, audit_universe_id=None, months=12):
+        """Get risk trend data"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditFindings/GetRiskTrend"
+        params = {"months": months}
+        if reference_id:
+            params["referenceId"] = reference_id
+        if audit_universe_id:
+            params["auditUniverseId"] = audit_universe_id
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return None
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_risk_velocity(self, reference_id=None, audit_universe_id=None):
+        """Get risk velocity metrics"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditFindings/GetRiskVelocity"
+        params = {}
+        if reference_id:
+            params["referenceId"] = reference_id
+        if audit_universe_id:
+            params["auditUniverseId"] = audit_universe_id
+        try:
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return None
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_finding_severities(self):
+        """Get all finding severity levels"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditFindings/GetSeverities"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return []
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
+
+    async def get_finding_statuses(self):
+        """Get all finding status values"""
+        await self._ensure_session()
+        base = self.base_url.rstrip('/')
+        url = f"{base}/AuditFindings/GetFindingStatuses"
+        try:
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return []
+        except aiohttp.ClientError as e:
+            raise Exception(f"Connection error: {str(e)}")
 
     async def close(self):
         """Close the HTTP session"""

@@ -8,7 +8,8 @@ class TopRisksWidget(BaseAnalyticsWidget):
         super().__init__(page, client, f"Top {count} Residual Risks")
         self.ref_id = ref_id
         self.count = count
-        self.use_mock = False
+        self.count = count
+        # self.use_mock = False # Removed
 
     def load_data(self):
         self.page.run_task(self._fetch)
@@ -16,7 +17,7 @@ class TopRisksWidget(BaseAnalyticsWidget):
     async def _fetch(self):
         await asyncio.sleep(0.5)
         
-        if self.ref_id is None and not self.use_mock:
+        if self.ref_id is None:
             self.content_area.content = ft.Container(
                 content=ft.Text("Select assessment context...", italic=True, size=12),
                 alignment=ft.alignment.center
@@ -27,15 +28,11 @@ class TopRisksWidget(BaseAnalyticsWidget):
 
         self.show_loading()
         try:
-            if self.use_mock:
-                risks = await self.client.get_mock_top_risks()
-                print(f"DEBUG: TopRisksWidget - Using MOCK data")
-            else:
-                print(f"DEBUG: TopRisksWidget fetching for ref_id: {self.ref_id}")
-                raw_data = await self.client.get_top_risks(self.count, self.ref_id)
-                print(f"DEBUG: TopRisksWidget raw_data type: {type(raw_data)}")
-                # The API might be returning a wrapper or a direct list
-                risks = raw_data.get("topResidualRisks", raw_data) if isinstance(raw_data, dict) else raw_data
+            print(f"DEBUG: TopRisksWidget fetching for ref_id: {self.ref_id}")
+            raw_data = await self.client.get_top_risks(self.count, self.ref_id)
+            print(f"DEBUG: TopRisksWidget raw_data type: {type(raw_data)}")
+            # The API might be returning a wrapper or a direct list
+            risks = raw_data.get("topResidualRisks", raw_data) if isinstance(raw_data, dict) else raw_data
                 
             print(f"DEBUG: TopRisksWidget risks count: {len(risks) if risks else 0}")
             if not risks:

@@ -21,9 +21,12 @@ class AssessmentListView(BaseView):
         self.user = user
         self.reference_id = reference_id
         self.initial_filter = initial_filter or {}
-        self.search_value = ""
-        self.current_risk_filter = "All Levels"
-        self.current_dept_filter = "All Departments"
+        self.active_filter = self._normalize_filter(self.initial_filter)
+        self.search_value = (self.active_filter.get("search") or "").lower()
+        self.current_risk_filter = self.active_filter.get("risk_level") or "All Levels"
+        self.current_dept_filter = self.active_filter.get("department") or "All Departments"
+        self.reference_filter_id = self.active_filter.get("reference_id") or self.reference_id
+        self.department_filter_id = self.active_filter.get("department_id")
         # Resizable panel flex values
         self.left_flex = getattr(self, "left_flex", 1)
         self.center_flex = getattr(self, "center_flex", 3)
@@ -103,7 +106,7 @@ class AssessmentListView(BaseView):
             self.assessments_table_container
         ], expand=True)
 
-        self.op_risk_content = OperationalRiskComponent(page, user)
+        self.op_risk_content = OperationalRiskComponent(page, user, reference_id=self.reference_id)
 
         self.tabs = ft.Tabs(
             selected_index=0,
@@ -214,10 +217,57 @@ class AssessmentListView(BaseView):
         self.search_value = e.control.value.lower()
         self.refresh_table()
 
+    def _normalize_filter(self, flt):
+        """Normalize drill-down filters into consistent keys."""
+        if not isinstance(flt, dict):
+            return {}
+
+        normalized = {}
+
+        reference_id = flt.get("reference_id") or flt.get("referenceId")
+        if reference_id is not None:
+            normalized["reference_id"] = reference_id
+
+        risk_level = (
+            flt.get("risk_level")
+            or flt.get("riskLevel")
+            or flt.get("severity")
+        )
+        if risk_level:
+            normalized["risk_level"] = risk_level
+
+        department_id = flt.get("department_id") or flt.get("departmentId")
+        if department_id is not None:
+            normalized["department_id"] = department_id
+
+        department_name = flt.get("department") or flt.get("departmentName")
+        if department_name:
+            normalized["department"] = department_name
+
+        search = flt.get("search") or flt.get("query")
+        if search:
+            normalized["search"] = search
+
+        return normalized
+
     def refresh_table(self):
         """Refresh the assessments table based on current filters and search"""
         filtered_assessments = self.assessments
         table_colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+
+        # Apply reference filter if provided
+        if self.reference_filter_id:
+            filtered_assessments = [
+                assessment for assessment in filtered_assessments
+                if str(assessment.reference_id) == str(self.reference_filter_id)
+            ]
+
+        # Apply department ID filter if provided
+        if self.department_filter_id:
+            filtered_assessments = [
+                assessment for assessment in filtered_assessments
+                if str(assessment.department_id) == str(self.department_filter_id)
+            ]
 
         # Apply search filter
         if self.search_value:

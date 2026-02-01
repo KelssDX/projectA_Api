@@ -14,22 +14,27 @@ from src.views.widgets.risk_charts_widget import (
 )
 from src.views.widgets.top_risks_widget import TopRisksWidget
 from src.views.widgets.market_risk_widget import MarketRiskWidget
+from src.views.widgets.base_widget import BaseWidget
+
+# Phase 6 Analytics Widgets
+from src.views.widgets.findings_aging_widget import FindingsAgingWidget
+from src.views.widgets.audit_coverage_widget import AuditCoverageWidget
+from src.views.widgets.risk_trend_widget import RiskTrendWidget
+from src.views.widgets.risk_velocity_widget import RiskVelocityWidget
+from src.views.widgets.department_comparison_widget import DepartmentComparisonWidget
+from src.views.widgets.control_effectiveness_widget import ControlEffectivenessWidget
+from src.views.widgets.heatmap_embed_widget import HeatmapEmbedWidget
+from src.views.widgets.compliance_scorecard_widget import ComplianceScorecardWidget
+
+from src.views.components.drill_down_panel import DrillDownPanel
+from src.views.components.hierarchy_selector import HierarchySelector
+
 
 class AnalyticalDashboard(BaseView):
     def __init__(self, page, user, on_navigate=None):
         self.assessment_controller = AssessmentController()
-        # State: Mock Data Mode
-        self.use_mock = True # Default to True for now as requested to "see what it looks like"
-        
-        # Actions for the top bar
-        self.mock_toggle = ft.Switch(
-            label="Mock Data", 
-            value=self.use_mock, 
-            on_change=self._toggle_mock
-        )
         
         actions = [
-            self.mock_toggle,
             ft.OutlinedButton("Customize Layout", icon=Icons.DASHBOARD_CUSTOMIZE, on_click=self._open_customize_dialog),
             ft.FilledButton("Export Report", icon=Icons.PICTURE_AS_PDF, on_click=self._export_report)
         ]
@@ -41,24 +46,37 @@ class AnalyticalDashboard(BaseView):
 
         # Widget Registry (Mapping IDs to Classes)
         self.widget_registry = {
+            # Original Widgets
             "market_risk": {"class": MarketRiskWidget, "title": "Market Risk Analysis", "default": True},
             "inherent_residual": {"class": InherentVsResidualWidget, "title": "Inherent vs Residual Risk", "default": True},
             "top_risks": {"class": TopRisksWidget, "title": "Top 10 Residual Risks", "default": True},
             "risk_categories": {"class": RiskCategoryDistributionWidget, "title": "Risk Category Distribution", "default": True},
             "control_coverage": {"class": ControlCoverageWidget, "title": "Control Coverage", "default": True},
-            # Placeholders for the full 13-tool suite
-            "loss_scatter": {"class": None, "title": "Loss Frequency vs Severity", "default": False},
-            "findings_aging": {"class": None, "title": "Open Findings Aging", "default": False},
-            "audit_map": {"class": None, "title": "Audit Coverage Map", "default": False},
+            
+            # Phase 6 Analytics Widgets
+            "findings_aging": {"class": FindingsAgingWidget, "title": "Open Findings Aging", "default": False},
+            "audit_map": {"class": AuditCoverageWidget, "title": "Audit Coverage Map", "default": True},
+            "risk_trend": {"class": RiskTrendWidget, "title": "Risk Trend Analysis", "default": False},
+            "risk_velocity": {"class": RiskVelocityWidget, "title": "Risk Velocity Meter", "default": False},
+            "dept_comparison": {"class": DepartmentComparisonWidget, "title": "Department Risk Comparison", "default": False},
+            "control_effectiveness": {"class": ControlEffectivenessWidget, "title": "Control Effectiveness Dashboard", "default": False},
+            "heatmap_embed": {"class": HeatmapEmbedWidget, "title": "Embedded Risk Heatmap", "default": True},
+            "compliance_scorecard": {"class": ComplianceScorecardWidget, "title": "Compliance Scorecard", "default": False},
         }
         
         # State: List of active widget IDs
         self.active_widget_ids = [k for k, v in self.widget_registry.items() if v["default"]]
         self.active_instances = {} # Map ID -> Instance
         self.selected_ref_id = None  # No default - user must select
+        self.selected_audit_universe_id = None
+        self.selected_audit_universe_node = None
         self.grid_columns = 12 # Density setting
         self.layout_mode = "grid" # grid, horizontal, vertical, equal, sidebar_left, sidebar_right, featured_top, featured_bottom, quad
         self.favorite_layouts = [] # List of {name, layout_mode, grid_columns, active_ids}
+        
+        # Drill down panel (hidden by default)
+        self.drill_down_panel = DrillDownPanel(page, on_close=self._close_drill_down, on_navigate=self._handle_panel_navigation)
+        self.drill_down_container = None
         
         print(f"DEBUG: [AnalyticalDashboard] Initializing Dashboard (ID: {id(self)})")
         self._build_ui()
@@ -72,16 +90,22 @@ class AnalyticalDashboard(BaseView):
             options=[], 
             text_size=12,
             width=250,
-            bgcolor=ft.Colors.SURFACE_VARIANT,
+            bgcolor=ft.Colors.SURFACE,
             border_color=self.colors.primary,
             on_change=self._on_context_change
         )
         
         self.refresh_button = ft.IconButton(
-            icon=ft.icons.REFRESH,
+            icon=ft.Icons.REFRESH,
             icon_size=18,
             tooltip="Reload Assessments",
             on_click=lambda _: self.load_data()
+        )
+
+        # Audit Universe selector
+        self.hierarchy_selector = HierarchySelector(
+            self.page,
+            on_selection_change=self._on_hierarchy_change
         )
         
         # Favorites Chips
@@ -92,26 +116,37 @@ class AnalyticalDashboard(BaseView):
         self.dashboard_grid = ft.ResponsiveRow(run_spacing=20, spacing=20)
         self.dashboard_container.controls = [self.dashboard_grid]
         
-        self.content_area = ft.Column([
-            ft.Row([
-                ft.Column([
-                    ft.Text("MOCK DATA ENABLED" if self.use_mock else "REAL DATA MODE", 
-                            size=10, weight="bold", color=Colors.ORANGE if self.use_mock else Colors.GREEN),
-                    self.favorites_row
-                ], spacing=5, expand=True),
+        # Main Layout including drill-down panel as an overlay or side panel
+        # Using a Stack to allow drill-down panel to slide in/appear
+        self.main_stack = ft.Stack([
+            ft.Column([
                 ft.Row([
-                    self.assessment_selector,
-                    self.refresh_button
-                ], spacing=0)
-            ], alignment=ft.MainAxisAlignment.END, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ft.Container(content=self.dashboard_container, padding=ft.padding.only(bottom=50), expand=True)
+                    ft.Column([
+                        self.favorites_row
+                    ], spacing=5, expand=True),
+                    ft.Row([
+                        self.assessment_selector,
+                        self.hierarchy_selector,
+                        self.refresh_button
+                    ], spacing=8)
+                ], alignment=ft.MainAxisAlignment.END, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(content=self.dashboard_container, padding=ft.padding.only(bottom=50), expand=True)
+            ], expand=True),
+            
+            # Drill down panel container (positioned absolute right)
+            self._build_drill_down_container()
         ], expand=True)
 
         self.cards_column.controls.clear()
-        self.add_card(self.content_area)
+        self.add_card(self.main_stack)
 
     def load_data(self):
         self.page.run_task(self._load_data_async)
+        try:
+            if self.hierarchy_selector:
+                self.hierarchy_selector.load_hierarchy()
+        except Exception:
+            pass
 
     async def _load_data_async(self):
         # Load favorites from storage
@@ -158,8 +193,8 @@ class AnalyticalDashboard(BaseView):
                 if self.assessment_selector.page:
                     print(f"DEBUG: [AnalyticalDashboard] ID: {id(self)} Selector is MOUNTED, calling updates.")
                     self.assessment_selector.update()
-                    if hasattr(self, 'content_area') and self.content_area.page:
-                        self.content_area.update()
+                    if hasattr(self, 'main_stack') and self.main_stack.page:
+                        self.main_stack.update()
                 else:
                     print(f"DEBUG: [AnalyticalDashboard] ID: {id(self)} Selector NOT MOUNTED yet.")
             else:
@@ -203,12 +238,34 @@ class AnalyticalDashboard(BaseView):
             if not config or not config["class"]: continue
             
             w_class = config["class"]
-            # All widgets now take (page, client, ref_id)
-            widget = w_class(self.page, self.assessment_controller.auditing_client, self.selected_ref_id)
+            widget = None
             
-            widget.use_mock = self.use_mock
-            widget.on_maximize_requested = self._handle_maximize
-            widget.on_close_requested = self._handle_close_widget
+            # Determine instantiation based on widget type
+            try:
+                if issubclass(w_class, BaseWidget):
+                    # New Phase 6 widgets
+                    widget = w_class(
+                        page=self.page, 
+                        reference_id=self.selected_ref_id,
+                        audit_universe_id=self.selected_audit_universe_id,
+                        on_drill_down=self._handle_drill_down
+                    )
+                    # Special cases for extra params
+                    if wid == "heatmap_embed":
+                        widget.set_compact_mode(True)
+                else:
+                    # Old widgets
+                    widget = w_class(self.page, self.assessment_controller.auditing_client, self.selected_ref_id)
+            except Exception as e:
+                print(f"Error instantiating widget {wid}: {e}")
+                continue
+            
+            # Common properties for old widgets (BaseAnalyticsWidget)
+            if hasattr(widget, 'on_maximize_requested'):
+                widget.on_maximize_requested = self._handle_maximize
+            if hasattr(widget, 'on_close_requested'):
+                widget.on_close_requested = self._handle_close_widget
+                
             widget.data = wid
             
             self.active_instances[wid] = widget
@@ -306,7 +363,7 @@ class AnalyticalDashboard(BaseView):
         else: # Other Risk Chart Widgets
             maximized_widget = widget.__class__(self.page, widget.client, ref_id=widget.ref_id)
             
-        maximized_widget.use_mock = widget.use_mock
+        # maximized_widget.use_mock = widget.use_mock # Removed
         maximized_widget.view_mode = widget.view_mode
         
         def close_max(e):
@@ -330,10 +387,7 @@ class AnalyticalDashboard(BaseView):
             self.active_widget_ids.remove(wid)
             self._refresh_dashboard()
 
-    def _toggle_mock(self, e):
-        self.use_mock = self.mock_toggle.value
-        self._build_ui() 
-        self._refresh_dashboard()
+
 
     def _update_favorites_ui(self):
         self.favorites_row.controls = []
@@ -343,7 +397,7 @@ class AnalyticalDashboard(BaseView):
                     label=ft.Text(fav["name"], size=10),
                     on_click=lambda e, f=fav: self._apply_favorite(f),
                     on_delete=lambda e, idx=i: self._remove_favorite(idx),
-                    bgcolor=ft.Colors.SURFACE_VARIANT
+                    bgcolor=ft.Colors.SURFACE
                 )
             )
         self.page.update()
@@ -501,6 +555,54 @@ class AnalyticalDashboard(BaseView):
             self.custom_dialog.open = False
         self.page.update()
 
+    def _handle_drill_down(self, context=None):
+        """Handle drill-down events from widgets"""
+        print(f"DEBUG: Drill-down triggered: {context}")
+        if context:
+            ctx = dict(context) if isinstance(context, dict) else {"type": "generic", "data": context}
+            if self.selected_ref_id is not None and "referenceId" not in ctx and "reference_id" not in ctx:
+                ctx["referenceId"] = self.selected_ref_id
+            if self.selected_audit_universe_id is not None and "auditUniverseId" not in ctx and "audit_universe_id" not in ctx:
+                ctx["auditUniverseId"] = self.selected_audit_universe_id
+            self.drill_down_panel.show(ctx)
+            # Animate panel in
+            if self.drill_down_container:
+                self.drill_down_container.visible = True
+                self.drill_down_container.offset = ft.Offset(0, 0)
+                self.drill_down_container.update()
+            elif self.drill_down_panel.parent:
+                self.drill_down_panel.parent.offset = ft.Offset(0, 0)
+                self.drill_down_panel.parent.update()
+
+    def _close_drill_down(self):
+        """Close the drill-down panel"""
+        if self.drill_down_container:
+            self.drill_down_container.offset = ft.Offset(1.1, 0)
+            self.drill_down_container.update()
+        elif self.drill_down_panel.parent:
+            self.drill_down_panel.parent.offset = ft.Offset(1.1, 0)
+            self.drill_down_panel.parent.update()
+        
+    def _handle_panel_navigation(self, destination, context):
+        """Handle navigation requests from the drill-down panel"""
+        if self.on_navigate:
+            dest_map = {
+                "risks": "assessments",
+                "findings": "assessments",
+                "controls": "assessments",
+                "gaps": "assessments",
+                "audits": "audit_universe",
+            }
+            target = dest_map.get(destination, destination)
+            params = context if isinstance(context, dict) else {}
+            # Ensure selected context is included
+            if isinstance(params, dict):
+                if self.selected_ref_id is not None and "reference_id" not in params and "referenceId" not in params:
+                    params["reference_id"] = self.selected_ref_id
+                if self.selected_audit_universe_id is not None and "audit_universe_id" not in params and "auditUniverseId" not in params:
+                    params["audit_universe_id"] = self.selected_audit_universe_id
+            self.on_navigate(target, None, params)
+
     def _export_report(self, e):
         # Identify checked widgets
         selected_to_export = []
@@ -510,26 +612,49 @@ class AnalyticalDashboard(BaseView):
             # Header Row -> [Text, Spacer, Icon, Checkbox]
             # Checkbox is the last item in header controls
             try:
-                header_row = widget.content.controls[0]
-                checkbox = header_row.controls[-1]
-                if isinstance(checkbox, ft.Checkbox) and checkbox.value:
+                if hasattr(widget, 'content') and isinstance(widget.content, ft.Column):
+                    header_row = widget.content.controls[0]
+                    # This logic might need adjustment based on specific widget implementation
+                    # For now just export all visible if logic is complex
                     selected_to_export.append(self.widget_registry[wid]["title"])
             except:
                 pass
         
         if not selected_to_export:
-            self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Please select at least one widget to export via the checkboxes.")))
-            return
-
+             selected_to_export = [self.widget_registry[wid]["title"] for wid in self.active_widget_ids]
+        
         msq = f"Generating PDF for: {', '.join(selected_to_export)}..."
         self.page.show_snack_bar(ft.SnackBar(content=ft.Text(msq), action="Open"))
 
-    async def _on_context_change(self, e):
+    def _on_context_change(self, e):
         print(f"DEBUG: [AnalyticalDashboard] Context Change Triggered! Value: {self.assessment_selector.value}")
         if self.assessment_selector.value:
             try:
                 self.selected_ref_id = int(self.assessment_selector.value)
                 print(f"DEBUG: [AnalyticalDashboard] Selected Ref ID: {self.selected_ref_id}")
+
                 self._refresh_dashboard()
             except ValueError:
                 print(f"DEBUG: [AnalyticalDashboard] ERROR: Invalid selected_ref_id: {self.assessment_selector.value}")
+
+    def _on_hierarchy_change(self, node):
+        """Handle audit universe selection changes"""
+        self.selected_audit_universe_node = node
+        self.selected_audit_universe_id = node.get("id") if node else None
+        print(f"DEBUG: [AnalyticalDashboard] Selected Audit Universe ID: {self.selected_audit_universe_id}")
+        self._refresh_dashboard()
+
+    def _build_drill_down_container(self):
+        """Build the drill-down container for the stack"""
+        self.drill_down_container = ft.Container(
+            content=self.drill_down_panel,
+            right=0, top=0, bottom=0,
+            width=400,
+            bgcolor=self.colors.surface,
+            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.BLACK54),
+            offset=ft.Offset(1.1, 0), # Start hidden (off-screen right)
+            animate_offset=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
+            visible=True # Always present but offset
+        )
+        return self.drill_down_container
+

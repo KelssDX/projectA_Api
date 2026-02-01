@@ -123,3 +123,126 @@ class BaseAnalyticsWidget(ft.Container):
     def on_maximize_click(self, e):
         if self.on_maximize_requested:
             self.on_maximize_requested(self)
+
+
+class BaseWidget(ft.Container):
+    """
+    Base class for new analytics widgets with simplified interface.
+    Uses build_content(), load_data() pattern.
+    """
+    def __init__(self, page, title, icon=None, description=None):
+        super().__init__()
+        self.page = page
+        self.title = title
+        self.icon = icon
+        self.description = description
+        self.colors = get_theme_colors(page.theme_mode)
+        
+        # Container styling
+        self.padding = 15
+        self.border_radius = 12
+        self.bgcolor = self.colors.surface
+        self.border = ft.border.all(1, self.colors.border)
+        
+        # State
+        self.is_loading = False
+        self.error_message = None
+        
+        # Build the widget structure
+        self._build_widget()
+
+    def _build_widget(self):
+        """Build the widget frame with header and content area"""
+        # Header with icon and title
+        header_items = []
+        if self.icon:
+            header_items.append(ft.Icon(self.icon, size=18, color=self.colors.primary))
+        header_items.append(ft.Text(self.title, size=14, weight=ft.FontWeight.BOLD, color=self.colors.text_primary))
+        if self.description:
+            header_items.append(ft.Container(expand=True))
+            header_items.append(ft.Icon(
+                ft.Icons.INFO_OUTLINE, 
+                size=14, 
+                color=self.colors.text_secondary,
+                tooltip=self.description
+            ))
+        
+        header = ft.Row(header_items, spacing=8)
+        
+        # Content area - will be populated by build_content()
+        self.content_area = ft.Container(expand=True)
+        content = self.build_content()
+        if content:
+            self.content_area.content = content
+
+        # Resize handle (vertical)
+        self.resize_handle = ft.GestureDetector(
+            content=ft.Container(
+                content=ft.Icon(ft.Icons.DRAG_HANDLE, size=12, color=self.colors.border),
+                alignment=ft.alignment.bottom_right,
+                padding=2
+            ),
+            on_pan_update=self._handle_resize
+        )
+        
+        self.content = ft.Column([
+            header,
+            ft.Divider(height=1, color=self.colors.border),
+            self.content_area,
+            ft.Row([ft.Container(expand=True), self.resize_handle], spacing=0)
+        ], spacing=10, expand=True)
+    
+    def build_content(self):
+        """Override this method to build widget content. Should return a Flet control."""
+        return ft.Text("Widget content not implemented", size=12, color=self.colors.text_secondary)
+    
+    def load_data(self):
+        """Override this method to load data asynchronously"""
+        pass
+    
+    def show_loading(self):
+        """Show loading indicator"""
+        self.content_area.content = ft.Container(
+            content=ft.Column([
+                ft.ProgressRing(width=30, height=30, stroke_width=3),
+                ft.Text("Loading...", size=12, color=self.colors.text_secondary)
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+            alignment=ft.alignment.center,
+            expand=True
+        )
+        if self.page:
+            try:
+                self.page.update()
+            except:
+                pass
+    
+    def show_error(self, message):
+        """Show error message"""
+        self.content_area.content = ft.Container(
+            content=ft.Column([
+                ft.Icon(ft.Icons.ERROR_OUTLINE, size=32, color=Colors.RED),
+                ft.Text(f"Error: {message}", size=12, color=Colors.RED)
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+            alignment=ft.alignment.center,
+            expand=True
+        )
+        if self.page:
+            try:
+                self.page.update()
+            except:
+                pass
+    
+    def refresh(self):
+        """Refresh widget data"""
+        self.load_data()
+
+    def _handle_resize(self, e: ft.DragUpdateEvent):
+        """Allow vertical resizing for embedded widgets"""
+        current_height = self.height or 300
+        new_height = current_height + getattr(e, "delta_y", 0)
+        if 160 < new_height < 900:
+            self.height = new_height
+            try:
+                self.update()
+            except Exception:
+                pass

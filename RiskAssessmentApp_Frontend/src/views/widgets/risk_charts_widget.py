@@ -15,7 +15,8 @@ class InherentVsResidualWidget(BaseAnalyticsWidget):
     def __init__(self, page, client, ref_id):
         super().__init__(page, client, "Inherent vs Residual Risk")
         self.ref_id = ref_id
-        self.use_mock = False
+        self.ref_id = ref_id
+        # self.use_mock = False # Removed
         self.is_wide = True # Layout hint
 
     def load_data(self):
@@ -25,7 +26,7 @@ class InherentVsResidualWidget(BaseAnalyticsWidget):
         # Wait for mount
         await asyncio.sleep(0.5)
         
-        if self.ref_id is None and not self.use_mock:
+        if self.ref_id is None:
             self.content_area.content = ft.Container(
                 content=ft.Text("Please select an assessment to view analytics...", italic=True, color=ft.Colors.GREY_500),
                 alignment=ft.alignment.center,
@@ -37,14 +38,10 @@ class InherentVsResidualWidget(BaseAnalyticsWidget):
 
         self.show_loading()
         try:
-            if self.use_mock:
-                data = await self.client.get_mock_analytical_report()
-                print(f"DEBUG: {self.__class__.__name__} - Using MOCK data")
-            else:
-                raw_data = await self.client.get_analytical_report(self.ref_id)
-                print(f"DEBUG: {self.__class__.__name__} raw_data keys: {raw_data.keys() if raw_data else 'None'}")
-                # Normalize nesting: Real API nests under 'baseReport'
-                data = get_val(raw_data, "baseReport", "BaseReport", default=raw_data) if raw_data else {}
+            raw_data = await self.client.get_analytical_report(self.ref_id)
+            print(f"DEBUG: {self.__class__.__name__} raw_data keys: {raw_data.keys() if raw_data else 'None'}")
+            # Normalize nesting: Real API nests under 'baseReport'
+            data = get_val(raw_data, "baseReport", "BaseReport", default=raw_data) if raw_data else {}
             
             risk_reduction = get_val(data, "riskReduction", "RiskReduction")
             print(f"DEBUG: {self.__class__.__name__} risk_reduction sample: {risk_reduction[:2] if risk_reduction else 'None'}")
@@ -137,7 +134,8 @@ class RiskCategoryDistributionWidget(BaseAnalyticsWidget):
     def __init__(self, page, client, ref_id):
         super().__init__(page, client, "Risk Categories")
         self.ref_id = ref_id
-        self.use_mock = False
+        self.ref_id = ref_id
+        # self.use_mock = False # Removed
 
     def load_data(self):
         self.page.run_task(self._fetch)
@@ -145,7 +143,7 @@ class RiskCategoryDistributionWidget(BaseAnalyticsWidget):
     async def _fetch(self):
         await asyncio.sleep(0.5)
         
-        if self.ref_id is None and not self.use_mock:
+        if self.ref_id is None:
             self.content_area.content = ft.Container(
                 content=ft.Text("Select assessment context...", italic=True, size=12),
                 alignment=ft.alignment.center
@@ -156,13 +154,9 @@ class RiskCategoryDistributionWidget(BaseAnalyticsWidget):
 
         self.show_loading()
         try:
-            if self.use_mock:
-                data = await self.client.get_mock_analytical_report()
-                print(f"DEBUG: {self.__class__.__name__} - Using MOCK data")
-            else:
-                raw_data = await self.client.get_analytical_report(self.ref_id)
-                print(f"DEBUG: {self.__class__.__name__} raw_data keys: {raw_data.keys() if raw_data else 'None'}")
-                data = get_val(raw_data, "baseReport", "BaseReport", default=raw_data) if raw_data else {}
+            raw_data = await self.client.get_analytical_report(self.ref_id)
+            print(f"DEBUG: {self.__class__.__name__} raw_data keys: {raw_data.keys() if raw_data else 'None'}")
+            data = get_val(raw_data, "baseReport", "BaseReport", default=raw_data) if raw_data else {}
                 
             cat_dist = get_val(data, "categoryDistribution", "CategoryDistribution")
             print(f"DEBUG: {self.__class__.__name__} cat_dist: {cat_dist}")
@@ -239,7 +233,8 @@ class ControlCoverageWidget(BaseAnalyticsWidget):
     def __init__(self, page, client, ref_id):
         super().__init__(page, client, "Control Coverage")
         self.ref_id = ref_id
-        self.use_mock = False
+        self.ref_id = ref_id
+        # self.use_mock = False # Removed
 
     def load_data(self):
         self.page.run_task(self._fetch)
@@ -247,7 +242,7 @@ class ControlCoverageWidget(BaseAnalyticsWidget):
     async def _fetch(self):
         await asyncio.sleep(0.5)
         
-        if self.ref_id is None and not self.use_mock:
+        if self.ref_id is None:
             self.content_area.content = ft.Container(
                 content=ft.Text("Wait for context selection...", italic=True, size=12),
                 alignment=ft.alignment.center
@@ -258,14 +253,11 @@ class ControlCoverageWidget(BaseAnalyticsWidget):
 
         self.show_loading()
         try:
-            if self.use_mock:
-                data = await self.client.get_mock_analytical_report()
-            else:
-                raw_data = await self.client.get_analytical_report(self.ref_id)
-                print(f"DEBUG: {self.__class__.__name__} raw_data keys: {raw_data.keys() if raw_data else 'None'}")
-                # Control stats are usually at top level or in baseReport
-                base = get_val(raw_data, "baseReport", "BaseReport", default={})
-                data = raw_data if "controlStats" in raw_data or "ControlStats" in raw_data else base
+            raw_data = await self.client.get_analytical_report(self.ref_id)
+            print(f"DEBUG: {self.__class__.__name__} raw_data keys: {raw_data.keys() if raw_data else 'None'}")
+            # Control stats are usually at top level or in baseReport
+            base = get_val(raw_data, "baseReport", "BaseReport", default={})
+            data = raw_data if "controlStats" in raw_data or "ControlStats" in raw_data else base
                 
             stats = get_val(data, "controlStats", "ControlStats", default=[])
             print(f"DEBUG: {self.__class__.__name__} stats count: {len(stats) if stats else 0}")

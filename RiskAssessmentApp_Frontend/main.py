@@ -11,6 +11,7 @@ from src.views.departments.departments_view import DepartmentsView
 from src.views.projects.projects_view import ProjectsView
 from src.views.dashboard.modern_heatmap_dashboard import ModernHeatmapDashboard
 from src.views.analytics.analytical_dashboard import AnalyticalDashboard
+from src.views.audit_universe.audit_universe_view import AuditUniverseView
 from src.core.config import get_db_connection
 from src.controllers.auth_controller import AuthController
 from src.controllers.assessment_controller import AssessmentController
@@ -76,13 +77,14 @@ class RiskAssessmentApp:
                 self.current_nav_index = index
                 view_map = {
                     0: "dashboard",
-                    1: "assessments", 
+                    1: "assessments",
                     2: "heatmap",
                     3: "analytics",
-                    4: "departments",
-                    5: "projects",
-                    6: "users",
-                    7: "settings"
+                    4: "audit_universe",
+                    5: "departments",
+                    6: "projects",
+                    7: "users",
+                    8: "settings"
                 }
                 view_name = view_map.get(index, "dashboard")
                 self.show_view(view_name)
@@ -97,10 +99,12 @@ class RiskAssessmentApp:
         def on_navigate(view_name, subview=None, params=None):
             """Handle navigation requests from views"""
             try:
-                if params:
-                    if view_name == "assessments" and "reference_id" in params:
-                        self.current_reference_id = params["reference_id"]
-                    if "filter" in params:
+                if isinstance(params, dict):
+                    if view_name == "assessments":
+                        ref_id = params.get("reference_id") or params.get("referenceId")
+                        if ref_id is not None:
+                            self.current_reference_id = ref_id
+                        # Store any params as pending filters for the assessments list
                         self.pending_assessment_filter = params
                 
                 if subview == "form":
@@ -391,7 +395,7 @@ class RiskAssessmentApp:
                             print(f"DEBUG [BEFORE NAV]: Sidebar exists")
                         
                         self.current_nav_index = index
-                        view_map = {0: "dashboard", 1: "assessments", 2: "heatmap", 3: "analytics", 4: "departments", 5: "projects", 6: "users", 7: "settings"}
+                        view_map = {0: "dashboard", 1: "assessments", 2: "heatmap", 3: "analytics", 4: "audit_universe", 5: "departments", 6: "projects", 7: "users", 8: "settings"}
                         view_name = view_map.get(index, "dashboard")
                         self.show_view(view_name)
                         if hasattr(self.sidebar, 'update_selection'):
@@ -532,7 +536,7 @@ class RiskAssessmentApp:
                 elif view_name == "analytics":
                     try:
                         analytics_view = AnalyticalDashboard(
-                            self.page, 
+                            self.page,
                             self.current_user
                         )
                         self.views[view_name] = analytics_view
@@ -540,6 +544,17 @@ class RiskAssessmentApp:
                         print(f"Error creating analytics view: {e}")
                         self.views[view_name] = ft.Container(
                             content=ft.Text(f"Error loading analytics view: {str(e)}", color=ft.Colors.RED),
+                            padding=20,
+                            expand=True
+                        )
+                elif view_name == "audit_universe":
+                    try:
+                        audit_universe_view = AuditUniverseView(self.page)
+                        self.views[view_name] = audit_universe_view
+                    except Exception as e:
+                        print(f"Error creating audit universe view: {e}")
+                        self.views[view_name] = ft.Container(
+                            content=ft.Text(f"Error loading audit universe view: {str(e)}", color=ft.Colors.RED),
                             padding=20,
                             expand=True
                         )
@@ -591,10 +606,11 @@ class RiskAssessmentApp:
                         "assessments": 1,
                         "heatmap": 2,
                         "analytics": 3,
-                        "departments": 4,
-                        "projects": 5,
-                        "users": 6,
-                        "settings": 7,
+                        "audit_universe": 4,
+                        "departments": 5,
+                        "projects": 6,
+                        "users": 7,
+                        "settings": 8,
                     }
                     new_index = index_map.get(view_name, self.current_nav_index)
                     self.current_nav_index = new_index

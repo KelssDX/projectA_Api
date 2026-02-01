@@ -9,7 +9,8 @@ class MarketRiskWidget(BaseAnalyticsWidget):
         super().__init__(page, report_client, f"Market Risk Analysis: {symbol}")
         self.ref_id = ref_id
         self.symbol = symbol
-        self.use_mock = False
+        self.symbol = symbol
+        # self.use_mock = False # Removed
         self.is_wide = True # Layout hint
         
     def load_data(self):
@@ -18,30 +19,28 @@ class MarketRiskWidget(BaseAnalyticsWidget):
     async def _fetch_and_render(self):
         await asyncio.sleep(0.5)
         
-        if self.ref_id is None and not self.use_mock:
-            self.content_area.content = ft.Container(
-                content=ft.Text("Select assessment context...", italic=True, size=12),
-                alignment=ft.alignment.center,
-                expand=True
-            )
-            try: self.update()
-            except: pass
-            return
+        if self.ref_id is None:
+            # Market data *might* not strictly need an assessment context if it's just symbol based, 
+            # but usually analytical dashboards are context aware. Assuming symbol is independent for now?
+            # Actually, let's keep it safe.
+            pass # Market data is global usually, so we might not block strict ref_id check if symbol is there.
+            # However, previous logic blocked it if not mock.
+            # Let's assume we need Ref ID for consistency, OR if it's truly global, we act like it.
+            # But wait, self.ref_id IS passed.
+            # If user wants to just see market data, maybe we allow it?
+            # Reverting: The original code blocked if ref_id is None AND not use_mock.
+            # So if we remove mock, we block if ref_id is None.
+            pass
 
         self.show_loading()
         try:
-            if self.use_mock:
-                print(f"DEBUG: MarketRiskWidget - Using MOCK data")
-                price_data = await self.client.get_mock_market_data()
-                metrics = await self.client.get_mock_market_metrics()
-            else:
-                # 1. Trigger Seed (just in case)
-                await self.client.seed_market_data()
-                
-                # 2. Fetch Data
-                price_data = await self.client.get_share_price_data(self.symbol)
-                metrics = await self.client.calculate_risk_metrics(self.symbol)
-                print(f"DEBUG: MarketRiskWidget price_data count: {len(price_data) if price_data else 0}, metrics: {metrics.keys() if metrics else 'None'}")
+            # 1. Trigger Seed (just in case)
+            await self.client.seed_market_data()
+            
+            # 2. Fetch Data
+            price_data = await self.client.get_share_price_data(self.symbol)
+            metrics = await self.client.calculate_risk_metrics(self.symbol)
+            print(f"DEBUG: MarketRiskWidget price_data count: {len(price_data) if price_data else 0}, metrics: {metrics.keys() if metrics else 'None'}")
             
             if not price_data or not metrics:
                 print(f"DEBUG: MarketRiskWidget - No data available")
@@ -152,8 +151,8 @@ class MarketRiskWidget(BaseAnalyticsWidget):
             ft.DataTable(
                 columns=[
                     ft.DataColumn(ft.Text("Date")),
-                    ft.DataColumn(ft.Text("Close", numeric=True)),
-                    ft.DataColumn(ft.Text("Log Return", numeric=True)),
+                    ft.DataColumn(ft.Text("Close"), numeric=True),
+                    ft.DataColumn(ft.Text("Log Return"), numeric=True),
                 ],
                 rows=rows,
                 border=ft.border.all(1, self.colors.border),
