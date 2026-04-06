@@ -3,11 +3,15 @@ using Affine.Engine.Repository.Identity;
 using Affine.Engine.Repository.Market;
 using Affine.Engine.Repository.Operational;
 using Affine.Engine.Services;
+using Affine.Auditing.API.Services;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 // Add Swagger generation with a Swagger document for the API
 builder.Services.AddSwaggerGen(c =>
@@ -47,6 +51,46 @@ builder.Services.AddScoped<IAuditUniverseRepository, AuditUniverseRepository>(pr
 
 builder.Services.AddScoped<IAuditFindingsRepository, AuditFindingsRepository>(provider =>
     new AuditFindingsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditProceduresRepository, AuditProceduresRepository>(provider =>
+    new AuditProceduresRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditWorkingPapersRepository, AuditWorkingPapersRepository>(provider =>
+    new AuditWorkingPapersRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditDocumentsRepository, AuditDocumentsRepository>(provider =>
+    new AuditDocumentsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditExecutionRepository, AuditExecutionRepository>(provider =>
+    new AuditExecutionRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditWorkflowRepository, AuditWorkflowRepository>(provider =>
+    new AuditWorkflowRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditAnalyticsRepository, AuditAnalyticsRepository>(provider =>
+    new AuditAnalyticsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditMaterialityRepository, AuditMaterialityRepository>(provider =>
+    new AuditMaterialityRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditReportingRepository, AuditReportingRepository>(provider =>
+    new AuditReportingRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditTrailRepository, AuditTrailRepository>(provider =>
+    new AuditTrailRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditPlatformRepository, AuditPlatformRepository>(provider =>
+    new AuditPlatformRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditReviewsRepository, AuditReviewsRepository>(provider =>
+    new AuditReviewsRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddScoped<IAuditAccessLogRepository, AuditAccessLogRepository>(provider =>
+    new AuditAccessLogRepository(builder.Configuration.GetConnectionString("RiskAssessment")));
+
+builder.Services.AddHttpClient<IAuditWorkflowService, AuditWorkflowService>();
+builder.Services.AddScoped<IAuditTrailService, AuditTrailService>();
+builder.Services.AddHostedService<AuditWorkflowReminderHostedService>();
 
 builder.Services.AddControllers();
 

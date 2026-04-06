@@ -12,6 +12,9 @@ from src.views.projects.projects_view import ProjectsView
 from src.views.dashboard.modern_heatmap_dashboard import ModernHeatmapDashboard
 from src.views.analytics.analytical_dashboard import AnalyticalDashboard
 from src.views.audit_universe.audit_universe_view import AuditUniverseView
+from src.views.notifications.notifications_center_view import NotificationsCenterView
+from src.views.reviews.review_signoff_view import ReviewSignoffView
+from src.views.workflows.workflow_inbox_view import WorkflowInboxView
 from src.core.config import get_db_connection
 from src.controllers.auth_controller import AuthController
 from src.controllers.assessment_controller import AssessmentController
@@ -26,10 +29,12 @@ class RiskAssessmentApp:
     def __init__(self):
         self.auth_controller = AuthController()
         self.current_user = None
-        self.assessment_controller = AssessmentController()
+        self.assessment_controller = AssessmentController(self.current_user)
         self.current_reference_id = None
         self.pending_assessment_filter = None
         self.auditing_client = None
+        self.platform_config = {}
+        self.feature_flags = {}
         # Initialize UI components state
         self.sidebar = None
         self.layout = None
@@ -37,7 +42,7 @@ class RiskAssessmentApp:
 
     async def main(self, page: ft.Page):
         # Set up the page
-        page.title = "Risk Assessment Application"
+        page.title = "Audit Management Application"
         page.theme_mode = ft.ThemeMode.LIGHT
         page.window_width = 1200
         page.window_height = 800
@@ -75,18 +80,7 @@ class RiskAssessmentApp:
                     print(f"DEBUG [BEFORE NAV]: Sidebar.content has {len(self.sidebar.content.controls)} controls")
                 
                 self.current_nav_index = index
-                view_map = {
-                    0: "dashboard",
-                    1: "assessments",
-                    2: "heatmap",
-                    3: "analytics",
-                    4: "audit_universe",
-                    5: "departments",
-                    6: "projects",
-                    7: "users",
-                    8: "settings"
-                }
-                view_name = view_map.get(index, "dashboard")
+                view_name = self._view_name_for_index(index)
                 self.show_view(view_name)
                 self.update_sidebar_selection()
                 
@@ -104,74 +98,27 @@ class RiskAssessmentApp:
                         ref_id = params.get("reference_id") or params.get("referenceId")
                         if ref_id is not None:
                             self.current_reference_id = ref_id
-                        # Store any params as pending filters for the assessments list
-                        self.pending_assessment_filter = params
+                        if subview != "details":
+                            # Store list-level filters only; details navigation manages its own state.
+                            self.pending_assessment_filter = params
                 
                 if subview == "form":
                     # Handle form navigation
                     self.show_view(f"{view_name}_form")
                 elif subview == "details":
-                    # Handle details navigation explicitly
-                    try:
-                        from src.views.assessments.modern_details import ModernAssessmentDetails
-                        assessment_id = None
-                        reference_id = None
-                        if isinstance(params, dict):
-                            assessment_id = params.get("id") or params.get("assessment_id")
-                            reference_id = params.get("reference_id") or assessment_id
+                    assessment_id = None
+                    reference_id = None
+                    initial_tab = 0
+                    if isinstance(params, dict):
+                        assessment_id = params.get("id") or params.get("assessment_id")
+                        reference_id = params.get("reference_id") or params.get("referenceId") or assessment_id
+                        initial_tab = params.get("initial_tab", 0)
 
-                        def go_back():
-                            # Return to list view
-                            self.show_view("assessments")
-
-                        def edit_assessment(ref_id):
-                            # Navigate to edit mode
-                            try:
-                                from src.views.assessments.unified_form import UnifiedAssessmentForm
-                                from src.controllers.assessment_controller import AssessmentController
-                                
-                                async def load_and_edit():
-                                    controller = AssessmentController()
-                                    assessment_data = await controller.get_risk_assessment(ref_id)
-                                    
-                                    edit_form = UnifiedAssessmentForm(
-                                        self.page, 
-                                        self.current_user, 
-                                        mode="edit", 
-                                        reference_id=ref_id,
-                                        assessment=assessment_data, 
-                                        on_cancel=go_back
-                                    )
-                                    self.content_area.content = edit_form
-                                    self.page.update()
-                                
-                                import asyncio
-                                self.page.run_task(load_and_edit)
-                                
-                            except Exception as e:
-                                print(f"Error loading edit form: {e}")
-
-                        details_view = ModernAssessmentDetails(
-                            self.page,
-                            self.current_user,
-                            assessment_id=assessment_id,
-                            reference_id=reference_id,
-                            on_back=go_back,
-                            on_edit=edit_assessment
-                        )
-                        # Swap page content to details
-                        if hasattr(self.page, 'controls'):
-                            self.page.controls = [self.layout]
-                            # Place details in content area next to sidebar
-                            self.content_area.content = details_view
-                        else:
-                            self.content_area.content = details_view
-                        self.page.update()
-                        return
-                    except Exception as e:
-                        print(f"Error loading details view: {e}")
-                        # Fallback to default view switcher
-                        self.show_view(view_name)
+                    self._open_assessment_details(
+                        assessment_id=assessment_id,
+                        reference_id=reference_id,
+                        initial_tab=initial_tab,
+                    )
                 else:
                     # Regular view navigation
                     self.show_view(view_name)
@@ -265,7 +212,7 @@ class RiskAssessmentApp:
             
             self.login_view = ft.Container(
                 content=ft.Column([
-                    ft.Text("Risk Assessment Login", size=28, weight=ft.FontWeight.BOLD),
+                    ft.Text("Audit Platform Login", size=28, weight=ft.FontWeight.BOLD),
                     ft.Container(height=20),
                     self.email_field,
                     self.password_field,
@@ -349,14 +296,138 @@ class RiskAssessmentApp:
         snackbar.open = True
         self.page.update()
 
+    def _format_assessment_id(self, assessment_id=None, reference_id=None):
+        if isinstance(assessment_id, str) and assessment_id.strip():
+            return assessment_id
+        if isinstance(assessment_id, int):
+            return f"A-{assessment_id:03d}"
+        if isinstance(reference_id, int):
+            return f"A-{reference_id:03d}"
+        if isinstance(reference_id, str):
+            raw = reference_id.strip()
+            if raw.startswith("A-"):
+                return raw
+            try:
+                return f"A-{int(raw):03d}"
+            except ValueError:
+                return raw or None
+        return None
+
+    def _return_to_assessments(self):
+        self.current_reference_id = None
+        self.pending_assessment_filter = None
+        self.views.pop("assessments", None)
+        self.show_view("assessments")
+
+    def _show_assessments_shell_state(self):
+        self.current_nav_index = self._view_index_for_name("assessments")
+        self.update_sidebar_selection()
+
+    def _open_assessment_edit_form(self, reference_id, on_cancel=None):
+        try:
+            from src.views.assessments.unified_form import UnifiedAssessmentForm
+        except Exception as ex:
+            print(f"Error importing edit form: {ex}")
+            self.show_snackbar("Unable to open edit form.", ft.Colors.RED)
+            return
+
+        async def load_and_edit():
+            try:
+                controller = AssessmentController(self.current_user)
+                assessment_data = await controller.get_risk_assessment(reference_id)
+                if not assessment_data:
+                    self.show_snackbar("Audit file details could not be loaded for editing.", ft.Colors.RED)
+                    return
+
+                edit_form = UnifiedAssessmentForm(
+                    self.page,
+                    self.current_user,
+                    mode="edit",
+                    reference_id=reference_id,
+                    assessment=assessment_data,
+                    on_cancel=on_cancel or self._return_to_assessments,
+                )
+                self._show_assessments_shell_state()
+                self.content_area.content = edit_form
+                self.page.update()
+            except Exception as ex:
+                print(f"Error loading edit form: {ex}")
+                try:
+                    print(traceback.format_exc())
+                except Exception:
+                    pass
+                self.show_snackbar("Unable to open the edit view for this audit file.", ft.Colors.RED)
+
+        self.page.run_task(load_and_edit)
+
+    def _open_assessment_details(self, assessment_id=None, reference_id=None, initial_tab=0):
+        resolved_reference_id = reference_id or assessment_id
+        resolved_assessment_id = self._format_assessment_id(assessment_id=assessment_id, reference_id=resolved_reference_id)
+        self.current_reference_id = resolved_reference_id
+        self.pending_assessment_filter = None
+
+        def go_back():
+            self._return_to_assessments()
+
+        def edit_assessment(ref_id):
+            self._open_assessment_edit_form(ref_id, on_cancel=go_back)
+
+        try:
+            from src.views.assessments.modern_details import ModernAssessmentDetails
+
+            details_view = ModernAssessmentDetails(
+                self.page,
+                self.current_user,
+                assessment_id=resolved_assessment_id,
+                reference_id=resolved_reference_id,
+                on_back=go_back,
+                on_edit=edit_assessment,
+                initial_tab=initial_tab,
+            )
+            self._show_assessments_shell_state()
+            self.content_area.content = details_view
+            self.page.update()
+            return
+        except Exception as ex:
+            print(f"Error loading modern details view: {ex}")
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
+
+        try:
+            from src.views.assessments.details import AssessmentDetailsView
+
+            fallback_view = AssessmentDetailsView(
+                self.page,
+                self.current_user,
+                assessment_id=resolved_assessment_id,
+                on_back=go_back,
+            )
+            self._show_assessments_shell_state()
+            self.content_area.content = fallback_view
+            self.page.update()
+            self.show_snackbar("Opened audit file in the fallback details view.", ft.Colors.ORANGE)
+        except Exception as ex:
+            print(f"Error loading fallback details view: {ex}")
+            try:
+                print(traceback.format_exc())
+            except Exception:
+                pass
+            self.show_snackbar("Unable to open this audit file right now.", ft.Colors.RED)
+            self._return_to_assessments()
+
     async def on_login(self):
         """Handle successful login"""
         try:
             print("Initializing views")
+            self.assessment_controller = AssessmentController(self.current_user)
             
             # Initialize views
             from src.api.auditing_client import AuditingAPIClient
             self.auditing_client = AuditingAPIClient()
+            self.auditing_client.set_current_user(self.current_user)
+            await self._load_platform_configuration()
             
             # Create modern dashboard view
             self.views["dashboard"] = DashboardView(
@@ -395,8 +466,7 @@ class RiskAssessmentApp:
                             print(f"DEBUG [BEFORE NAV]: Sidebar exists")
                         
                         self.current_nav_index = index
-                        view_map = {0: "dashboard", 1: "assessments", 2: "heatmap", 3: "analytics", 4: "audit_universe", 5: "departments", 6: "projects", 7: "users", 8: "settings"}
-                        view_name = view_map.get(index, "dashboard")
+                        view_name = self._view_name_for_index(index)
                         self.show_view(view_name)
                         if hasattr(self.sidebar, 'update_selection'):
                             self.sidebar.update_selection(index)
@@ -415,12 +485,14 @@ class RiskAssessmentApp:
                     page=self.page,
                     current_user=self.current_user,
                     nav_change_callback=nav_change_handler,
-                    current_nav_index=self.current_nav_index
+                    current_nav_index=self.current_nav_index,
+                    feature_flags=self.feature_flags
                 )
                 print(f"DEBUG: Created NEW Sidebar component")
             else:
                 # Update existing sidebar with current user and callback if needed
                 self.sidebar.current_user = self.current_user
+                self.sidebar.feature_flags = self.feature_flags
                 # Re-bind callback to ensure it uses current context
                 # (Optional depending on if context changed, but safe to do)
                 print(f"DEBUG: Reusing EXISTING Sidebar component")
@@ -469,7 +541,14 @@ class RiskAssessmentApp:
 
     def show_view(self, view_name):
         """Switch to a specific view"""
+        view_name = self._normalize_shell_view_name(view_name)
         print(f"Showing view: {view_name}")
+        if not self._is_view_enabled(view_name):
+            self.show_snackbar(f"{view_name.replace('_', ' ').title()} is disabled in this environment.", ft.Colors.ORANGE)
+            return
+
+        if view_name == "assessments" and not self.pending_assessment_filter:
+            self.current_reference_id = None
         
         # DEBUG: Check sidebar state at start of show_view
         if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
@@ -486,6 +565,7 @@ class RiskAssessmentApp:
                         from src.api.auditing_client import AuditingAPIClient
                         if self.auditing_client is None:
                             self.auditing_client = AuditingAPIClient()
+                        self.auditing_client.set_current_user(self.current_user)
                         self.views[view_name] = DashboardView(
                             self.page, self.auditing_client, self.on_navigate, self.current_user
                         )
@@ -537,7 +617,9 @@ class RiskAssessmentApp:
                     try:
                         analytics_view = AnalyticalDashboard(
                             self.page,
-                            self.current_user
+                            self.current_user,
+                            on_navigate=self.on_navigate,
+                            platform_config=self.platform_config
                         )
                         self.views[view_name] = analytics_view
                     except Exception as e:
@@ -555,6 +637,51 @@ class RiskAssessmentApp:
                         print(f"Error creating audit universe view: {e}")
                         self.views[view_name] = ft.Container(
                             content=ft.Text(f"Error loading audit universe view: {str(e)}", color=ft.Colors.RED),
+                            padding=20,
+                            expand=True
+                        )
+                elif view_name == "workflows":
+                    try:
+                        workflow_view = WorkflowInboxView(
+                            self.page,
+                            self.current_user,
+                            on_navigate=self.on_navigate
+                        )
+                        self.views[view_name] = workflow_view
+                    except Exception as e:
+                        print(f"Error creating workflow inbox view: {e}")
+                        self.views[view_name] = ft.Container(
+                            content=ft.Text(f"Error loading workflow inbox: {str(e)}", color=ft.Colors.RED),
+                            padding=20,
+                            expand=True
+                        )
+                elif view_name == "notifications":
+                    try:
+                        notifications_view = NotificationsCenterView(
+                            self.page,
+                            self.current_user,
+                            on_navigate=self.on_navigate
+                        )
+                        self.views[view_name] = notifications_view
+                    except Exception as e:
+                        print(f"Error creating notifications center: {e}")
+                        self.views[view_name] = ft.Container(
+                            content=ft.Text(f"Error loading notifications center: {str(e)}", color=ft.Colors.RED),
+                            padding=20,
+                            expand=True
+                        )
+                elif view_name == "reviews":
+                    try:
+                        review_view = ReviewSignoffView(
+                            self.page,
+                            self.current_user,
+                            on_navigate=self.on_navigate
+                        )
+                        self.views[view_name] = review_view
+                    except Exception as e:
+                        print(f"Error creating review and sign-off view: {e}")
+                        self.views[view_name] = ft.Container(
+                            content=ft.Text(f"Error loading review and sign-off view: {str(e)}", color=ft.Colors.RED),
                             padding=20,
                             expand=True
                         )
@@ -599,20 +726,15 @@ class RiskAssessmentApp:
                             self.views[view_name].load_data()
                     except Exception:
                         pass
+                elif view_name in {"workflows", "notifications", "reviews"}:
+                    try:
+                        if hasattr(self.views[view_name], "load_data"):
+                            self.page.run_task(self.views[view_name].load_data)
+                    except Exception:
+                        pass
                 # Keep sidebar selection in sync when navigating programmatically
                 try:
-                    index_map = {
-                        "dashboard": 0,
-                        "assessments": 1,
-                        "heatmap": 2,
-                        "analytics": 3,
-                        "audit_universe": 4,
-                        "departments": 5,
-                        "projects": 6,
-                        "users": 7,
-                        "settings": 8,
-                    }
-                    new_index = index_map.get(view_name, self.current_nav_index)
+                    new_index = self._view_index_for_name(view_name)
                     self.current_nav_index = new_index
                     self.update_sidebar_selection()
                 except Exception:
@@ -623,6 +745,7 @@ class RiskAssessmentApp:
                     print(f"DEBUG [show_view BEFORE update]: Sidebar has {len(self.sidebar.content.controls)} controls")
                 
                 self.page.update()
+                self.page.run_task(self._record_module_open_usage, view_name)
                 
                 # DEBUG: Check sidebar state after page.update()
                 if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'content'):
@@ -634,6 +757,96 @@ class RiskAssessmentApp:
             print(f"Error showing view {view_name}: {e}")
             self.content_area.content = ft.Text(f"Error loading {view_name} view: {str(e)}")
             self.page.update()
+
+    async def _load_platform_configuration(self):
+        if self.auditing_client is None:
+            return
+        try:
+            config = await self.auditing_client.get_platform_configuration()
+            self.platform_config = config or {}
+            self.feature_flags = self._normalize_feature_flags(self.platform_config.get("featureFlags"))
+        except Exception as ex:
+            print(f"Failed to load platform configuration: {ex}")
+            self.platform_config = {}
+            self.feature_flags = {}
+
+    @staticmethod
+    def _normalize_feature_flags(flags):
+        if not isinstance(flags, dict):
+            return {}
+        normalized = {}
+        for key, value in flags.items():
+            normalized_key = "".join(ch if ch.isalnum() else "_" for ch in str(key)).strip("_").lower()
+            normalized[normalized_key] = bool(value)
+        return normalized
+
+    def _feature_enabled(self, flag_name, default=True):
+        return self.feature_flags.get(flag_name, default)
+
+    def _normalize_shell_view_name(self, view_name):
+        if view_name == "heatmap":
+            return "analytics"
+        if view_name == "departments":
+            return "audit_universe"
+        return view_name
+
+    def _is_view_enabled(self, view_name):
+        mapping = {
+            "dashboard": "dashboard",
+            "assessments": "assessments",
+            "heatmap": "heatmap",
+            "analytics": "analytics",
+            "audit_universe": "audit_universe",
+            "departments": "departments",
+            "projects": "projects",
+            "users": "users_admin",
+            "workflows": "workflow_inbox",
+            "notifications": "notifications_center",
+            "reviews": "review_signoff",
+            "settings": None,
+        }
+        flag_name = mapping.get(view_name)
+        return True if flag_name is None else self._feature_enabled(flag_name, True)
+
+    @staticmethod
+    def _nav_view_map():
+        return {
+            0: "dashboard",
+            1: "assessments",
+            2: "heatmap",
+            3: "analytics",
+            4: "audit_universe",
+            5: "departments",
+            6: "projects",
+            7: "users",
+            8: "workflows",
+            9: "notifications",
+            10: "reviews",
+            11: "settings",
+        }
+
+    def _view_name_for_index(self, index):
+        return self._nav_view_map().get(index, "dashboard")
+
+    def _view_index_for_name(self, view_name):
+        for index, mapped_name in self._nav_view_map().items():
+            if mapped_name == view_name:
+                return index
+        return self.current_nav_index
+
+    async def _record_module_open_usage(self, view_name):
+        if self.auditing_client is None:
+            return
+        try:
+            await self.auditing_client.record_usage_event({
+                "moduleName": "navigation",
+                "featureName": view_name,
+                "eventName": "open_view",
+                "referenceId": self.current_reference_id,
+                "source": "frontend-shell"
+            })
+        except Exception as ex:
+            print(f"Failed to record usage event for {view_name}: {ex}")
 
     def create_settings_view(self):
         """Create the settings view with dashboard-style layout and theme toggle"""
@@ -651,7 +864,7 @@ class RiskAssessmentApp:
             content=ft.Row([
                 ft.Column([
                     ft.Text("Settings", size=24, weight=ft.FontWeight.BOLD, color=colors.text_primary),
-                    ft.Text("Customize your Risk Core experience", size=14, color=colors.text_secondary),
+                    ft.Text("Customize your audit workspace", size=14, color=colors.text_secondary),
                 ], alignment=ft.CrossAxisAlignment.START),
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
         )
@@ -750,64 +963,19 @@ class RiskAssessmentApp:
             except Exception as _:
                 pass
 
-        # Update all menu items with modern styling
-        if hasattr(self, "menu_containers"):
-            menu_icons = [
-                Icons.DASHBOARD_OUTLINED,     # Dashboard - Clean dashboard outline
-                Icons.FACT_CHECK,             # Assessments - Professional fact check/audit icon
-                Icons.GRID_ON,                # Risk Heatmap - Clean grid for matrix view
-                Icons.INSERT_CHART,           # Analytical Report
-                Icons.DOMAIN,                 # Departments - Corporate building/domain
-                Icons.WORK_OUTLINE,           # Projects - Professional work briefcase outline
-                Icons.ADMIN_PANEL_SETTINGS,   # Users - Admin panel for user management
-                Icons.SETTINGS_OUTLINED       # Settings - Clean settings outline
-            ]
-            menu_items = [
-                {"text": "Dashboard", "index": 0},
-                {"text": "Assessments", "index": 1},
-                {"text": "Risk Heatmap", "index": 2},
-                {"text": "Analytical Report", "index": 3},
-                {"text": "Departments", "index": 4},
-                {"text": "Projects", "index": 5},
-                {"text": "Users", "index": 6},
-                {"text": "Settings", "index": 7},
-            ]
-            
-            for i, menu_item in enumerate(self.menu_containers):
-                is_active = menu_item.data == self.current_nav_index
-                if not self.sidebar_collapsed:
-                    # In both themes, active item text/icon should be white (button_text)
-                    active_color = colors.button_text if is_active else colors.sidebar_text
-                    menu_item.content = ft.Row([
-                        ft.Container(
-                            content=ft.Icon(menu_icons[i], color=active_color, size=20),
-                            width=40,
-                            alignment=ft.alignment.center
-                        ),
-                        ft.Text(
-                            menu_items[i]["text"], 
-                            color=active_color,
-                            weight=ft.FontWeight.BOLD if is_active else ft.FontWeight.NORMAL,
-                            size=14
-                        )
-                    ], spacing=12)
-                # Apply gradient to active item
-                try:
-                    if is_active:
-                        menu_item.gradient = build_gradient(colors.sidebar_item_active)
-                        menu_item.bgcolor = None
-                    else:
-                        menu_item.gradient = None
-                        menu_item.bgcolor = None
-                except Exception:
-                    menu_item.bgcolor = colors.sidebar_item_active if is_active else None
+        # Rebuild the sidebar so grouped navigation and labels follow the new theme.
+        if hasattr(self, "sidebar") and self.sidebar:
+            try:
+                self.sidebar._build_sidebar_content(colors)
+            except Exception:
+                pass
 
         # Update/rebuild settings view explicitly (it's a simple container)
         try:
             if "settings" in self.views:
                 self.views["settings"] = self.create_settings_view()
                 # If currently on settings, swap content immediately
-                if getattr(self, "current_nav_index", None) == 6 and hasattr(self, "content_area"):
+                if getattr(self, "current_nav_index", None) == 9 and hasattr(self, "content_area"):
                     self.content_area.content = self.views["settings"]
         except Exception:
             pass
@@ -842,17 +1010,7 @@ class RiskAssessmentApp:
 
         # Force current view to rebuild from blueprint so changes are visible immediately
         try:
-            view_map = {
-                0: "dashboard",
-                1: "assessments",
-                2: "heatmap",
-                3: "analytics",
-                4: "departments",
-                5: "projects",
-                6: "users",
-                7: "settings",
-            }
-            current = view_map.get(self.current_nav_index, "dashboard")
+            current = self._view_name_for_index(self.current_nav_index)
             self.views = {}
             self.show_view(current)
         except Exception as _:
@@ -881,7 +1039,7 @@ if __name__ == "__main__":
     # flet CLI handles the app lifecycle itself
     is_flet_cli = 'flet' in sys.modules or any('flet' in str(arg).lower() for arg in sys.argv)
     
-    parser = argparse.ArgumentParser(description="Risk Assessment Application")
+    parser = argparse.ArgumentParser(description="Audit Management Application")
     parser.add_argument(
         "--mode", 
         choices=["app", "web"], 
@@ -905,7 +1063,7 @@ if __name__ == "__main__":
     
     assets_dir = "assets" if os.path.exists("assets") else None
     
-    print(f"Starting Risk Assessment App in {'WEB' if args.mode == 'web' else 'DESKTOP'} mode")
+    print(f"Starting Audit Management App in {'WEB' if args.mode == 'web' else 'DESKTOP'} mode")
     print(f"Access at: http://{args.host}:{args.port}")
     
     if args.mode == "web":

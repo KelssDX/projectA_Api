@@ -18,6 +18,26 @@ API_CONFIG = {
     "verify_ssl": False  # Set to True in production
 }
 
+# Microsoft Power BI integration settings for the Analytical Report view.
+# `report_url` may include placeholders such as:
+# - {referenceId}
+# - {auditUniverseId}
+POWER_BI_CONFIG = {
+    "enabled": False,
+    "mode": "link",
+    "report_url": "",
+    "workspace_id": "",
+    "report_id": "",
+    "dataset_id": ""
+}
+
+WORKFLOW_CONFIG = {
+    "enabled": True,
+    "service_url": "https://localhost:5001/elsa/api",
+    "studio_url": "https://localhost:7001",
+    "open_studio_for_admin_only": False
+}
+
 # Legacy API_BASE_URL for compatibility with existing code
 API_BASE_URL = API_CONFIG["auditing_api"]
 
@@ -49,6 +69,11 @@ AUDITING_ENDPOINTS = {
     "get_operational_risks": "/OperationalRisk/GetOperationalRisks",
     "get_departments": "/RiskAssessment/GetDepartments",
     "get_projects": "/RiskAssessment/GetProjects",
+    "get_collaborator_roles": "/RiskAssessment/GetCollaboratorRoles",
+    "get_project_collaborators": "/RiskAssessment/GetProjectCollaborators",
+    "save_project_collaborators": "/RiskAssessment/SaveProjectCollaborators",
+    "get_reference_collaborators": "/RiskAssessment/GetReferenceCollaborators",
+    "save_reference_collaborators": "/RiskAssessment/SaveReferenceCollaborators",
     "seed_market_data": "/MarketRisk/SeedData",
 
     # Departments CRUD
@@ -94,3 +119,7 @@ def get_identity_api_url(endpoint_key):
     base_url = API_CONFIG["identity_api"]
     endpoint = IDENTITY_ENDPOINTS.get(endpoint_key, "")
     return f"{base_url}{endpoint}"
+
+def get_workflow_studio_url():
+    """Get the configured Elsa Studio URL"""
+    return WORKFLOW_CONFIG.get("studio_url", "").strip()

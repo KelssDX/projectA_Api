@@ -8,11 +8,15 @@ namespace Affine.Engine.Model.Auditing.Assessment
         public string BusinessObjectives { get; set; }
         public string MainProcess { get; set; }
         public string SubProcess { get; set; }
+        public string BusinessObjectiveDescription { get; set; }
         public string KeyRiskAndFactors { get; set; }
+        public string RiskDescription { get; set; }
         public string MitigatingControls { get; set; }
+        public string ControlDescription { get; set; }
         public string Responsibility { get; set; }
         public string Authoriser { get; set; }
         public string AuditorsRecommendedActionPlan { get; set; }
+        public string OutcomeDescription { get; set; }
         public string ResponsiblePerson { get; set; }
         public DateTime? AgreedDate { get; set; }
         public int? RiskLikelihoodId { get; set; }
@@ -24,5 +28,6 @@ namespace Affine.Engine.Model.Auditing.Assessment
         public int? EvidenceId { get; set; }
         public int? OutcomeLikelihoodId { get; set; }
         public int? ImpactId { get; set; }
+        public int? StatusId { get; set; }
     }
 } 

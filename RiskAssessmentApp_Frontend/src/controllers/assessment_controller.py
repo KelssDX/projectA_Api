@@ -5,8 +5,9 @@ from src.api.risk_calculator import RiskCalculator
 
 
 class AssessmentController:
-    def __init__(self):
+    def __init__(self, current_user=None):
         self.auditing_client = AuditingAPIClient()
+        self.auditing_client.set_current_user(current_user)
         self.risk_calculator = RiskCalculator()
 
     async def get_risk_assessment(self, reference_id):

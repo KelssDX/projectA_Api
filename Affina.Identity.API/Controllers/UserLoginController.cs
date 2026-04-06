@@ -1,3 +1,5 @@
+using Affine.Engine.Model.Auditing.AuditUniverse;
+using Affine.Engine.Repository.Auditing;
 using Affine.Engine.Model.Identity;
 using Affine.Engine.Repository.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -9,10 +11,12 @@ namespace Affina.Identity.API.Controllers
     public class UserLoginController : ControllerBase
     {
         private readonly IUserRepository _userRepository;
+        private readonly IAuditAccessLogRepository _accessLogRepository;
 
-        public UserLoginController(IUserRepository userRepository)
+        public UserLoginController(IUserRepository userRepository, IAuditAccessLogRepository accessLogRepository)
         {
             _userRepository = userRepository;
+            _accessLogRepository = accessLogRepository;
         }
 
         [HttpGet]
@@ -24,18 +28,22 @@ namespace Affina.Identity.API.Controllers
                 var user = await _userRepository.GetByEmailAndPasswordAsync(email, password);
                 if (user == null)
                 {
+                    await TryLogLoginEventAsync(email, null, "Failure", "Invalid email or password");
                     return BadRequest("Invalid email or password");
                 }
 
                 if (!user.IsActive)
                 {
+                    await TryLogLoginEventAsync(email, user, "Failure", "User account is disabled");
                     return BadRequest("User account is disabled");
                 }
 
+                await TryLogLoginEventAsync(email, user, "Success", null);
                 return Ok(user);
             }
             catch (Exception ex)
             {
+                await TryLogLoginEventAsync(email, null, "Failure", ex.Message);
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -260,6 +268,30 @@ namespace Affina.Identity.API.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
+        private async Task TryLogLoginEventAsync(string? email, User? user, string status, string? failureReason)
+        {
+            try
+            {
+                await _accessLogRepository.LogLoginEventAsync(new AuditLoginEventEntry
+                {
+                    UserId = user?.Id,
+                    Username = user?.Username ?? email,
+                    DisplayName = user?.Name,
+                    EventType = "Login",
+                    Status = status,
+                    IpAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString(),
+                    UserAgent = Request?.Headers?.UserAgent.ToString(),
+                    ClientContext = "Identity API",
+                    FailureReason = failureReason,
+                    CorrelationId = HttpContext?.TraceIdentifier
+                });
+            }
+            catch
+            {
+                // Authentication logging is best effort and must not block login responses.
             }
         }
     }

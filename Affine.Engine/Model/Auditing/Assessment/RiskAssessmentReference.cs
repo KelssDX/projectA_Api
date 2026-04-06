@@ -17,6 +17,12 @@ namespace Affine.Engine.Model.Auditing.Assessment
         public DateTime? AssessmentEndDate { get; set; }
         public string Assessor { get; set; }
         public string ApprovedBy { get; set; }
+        public int? DepartmentId { get; set; }
+        public int? ProjectId { get; set; }
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public int? StatusId { get; set; }
+        public string StatusName { get; set; }
     }
 
     /// <summary>

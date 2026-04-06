@@ -1,10 +1,11 @@
 import flet as ft
 from flet import Icons
+from src.utils.permissions import can_manage_users, can_review_audit_content
 from src.utils.theme import get_theme_colors, build_gradient, darken_color
 
 
 class Sidebar(ft.Container):
-    def __init__(self, page, current_user, nav_change_callback, current_nav_index=0):
+    def __init__(self, page, current_user, nav_change_callback, current_nav_index=0, feature_flags=None):
         # Generate unique key to force Flet to recognize this as a new control
         import time
         unique_key = f"sidebar_{int(time.time() * 1000)}"
@@ -19,6 +20,7 @@ class Sidebar(ft.Container):
         self.current_user = current_user
         self.nav_change_callback = nav_change_callback
         self.current_nav_index = current_nav_index
+        self.feature_flags = feature_flags or {}
         self.collapsed = False
         self.collapsed_width = 70
         self.expanded_width = 240
@@ -45,25 +47,57 @@ class Sidebar(ft.Container):
     
     def _build_sidebar_content(self, colors):
         """Build the complete sidebar content"""
-        
-        # Menu items data
-        menu_items_data = [
-            {"text": "Dashboard", "index": 0, "icon": Icons.DASHBOARD_OUTLINED},
-            {"text": "Assessments", "index": 1, "icon": Icons.FACT_CHECK},
-            {"text": "Risk Heatmap", "index": 2, "icon": Icons.GRID_ON},
-            {"text": "Analytical Report", "index": 3, "icon": Icons.ANALYTICS},
-            {"text": "Audit Universe", "index": 4, "icon": Icons.ACCOUNT_TREE},
-            {"text": "Departments", "index": 5, "icon": Icons.DOMAIN},
-            {"text": "Projects", "index": 6, "icon": Icons.WORK_OUTLINE},
-            {"text": "Users", "index": 7, "icon": Icons.ADMIN_PANEL_SETTINGS},
-            {"text": "Settings", "index": 8, "icon": Icons.SETTINGS_OUTLINED},
+        def is_enabled(flag_name, default=True):
+            return self.feature_flags.get(flag_name, default)
+
+        nav_sections = [
+            {
+                "title": "Portfolio",
+                "items": [
+                    {"text": "Audit Dashboard", "index": 0, "icon": Icons.DASHBOARD_OUTLINED, "enabled": is_enabled("dashboard")},
+                    {"text": "Notifications", "index": 9, "icon": Icons.NOTIFICATIONS_NONE, "enabled": is_enabled("notifications_center")},
+                ],
+            },
+            {
+                "title": "Planning",
+                "items": [
+                    {"text": "Audit Files", "index": 1, "icon": Icons.FACT_CHECK, "enabled": is_enabled("assessments")},
+                    {"text": "Audit Universe", "index": 4, "icon": Icons.ACCOUNT_TREE, "enabled": is_enabled("audit_universe")},
+                ],
+            },
+            {
+                "title": "Execution",
+                "items": [
+                    {"text": "Workflow Inbox", "index": 8, "icon": Icons.INBOX_OUTLINED, "enabled": is_enabled("workflow_inbox")},
+                    {
+                        "text": "Review & Sign-Off",
+                        "index": 10,
+                        "icon": Icons.VERIFIED_OUTLINED,
+                        "enabled": can_review_audit_content(self.current_user) and is_enabled("review_signoff"),
+                    },
+                ],
+            },
+            {
+                "title": "Reporting",
+                "items": [
+                    {"text": "Analytical Suite", "index": 3, "icon": Icons.ANALYTICS, "enabled": is_enabled("analytics")},
+                ],
+            },
+            {
+                "title": "Administration",
+                "items": [
+                    {"text": "Audit Projects", "index": 6, "icon": Icons.WORK_OUTLINE, "enabled": is_enabled("projects")},
+                    {"text": "Users", "index": 7, "icon": Icons.ADMIN_PANEL_SETTINGS, "enabled": can_manage_users(self.current_user) and is_enabled("users_admin")},
+                    {"text": "Settings", "index": 11, "icon": Icons.SETTINGS_OUTLINED, "enabled": True},
+                ],
+            },
         ]
-        
+
         self.menu_containers = []
         sidebar_controls = []
 
         # 1. Header
-        header_title = ft.Text("Risk Core", size=20, weight=ft.FontWeight.BOLD, color=colors.sidebar_text, visible=not self.collapsed)
+        header_title = ft.Text("Audit Core", size=20, weight=ft.FontWeight.BOLD, color=colors.sidebar_text, visible=not self.collapsed)
         
         def toggle_handler(_=None):
             self.collapsed = not self.collapsed
@@ -95,24 +129,41 @@ class Sidebar(ft.Container):
         sidebar_controls.append(sidebar_header)
 
         # 2. Menu Items
-        for item in menu_items_data:
-            index = item["index"]
-            is_active = (index == self.current_nav_index)
-            
-            # Use ListTile instead of Container+Row for better stability
-            menu_tile = ft.ListTile(
-                leading=ft.Icon(item["icon"]),
-                title=ft.Text(item["text"], size=14, visible=not self.collapsed),
-                selected=is_active,
-                on_click=lambda e, idx=index: self.nav_change_callback(idx),
-                selected_color=colors.button_text,
-                selected_tile_color=colors.sidebar_item_active,
-                text_color=colors.sidebar_text,
-                hover_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
+        for section in nav_sections:
+            visible_items = [item for item in section["items"] if item.get("enabled", True)]
+            if not visible_items:
+                continue
+
+            sidebar_controls.append(
+                ft.Container(
+                    padding=ft.padding.only(left=18, right=18, top=14, bottom=6),
+                    content=ft.Text(
+                        section["title"].upper(),
+                        size=10,
+                        weight=ft.FontWeight.BOLD,
+                        color=colors.text_secondary,
+                        visible=not self.collapsed,
+                    ),
+                )
             )
-            
-            self.menu_containers.append(menu_tile)
-            sidebar_controls.append(menu_tile)
+
+            for item in visible_items:
+                index = item["index"]
+                is_active = index == self.current_nav_index
+
+                menu_tile = ft.ListTile(
+                    leading=ft.Icon(item["icon"]),
+                    title=ft.Text(item["text"], size=14, visible=not self.collapsed),
+                    selected=is_active,
+                    on_click=lambda e, idx=index: self.nav_change_callback(idx),
+                    selected_color=colors.button_text,
+                    selected_tile_color=colors.sidebar_item_active,
+                    text_color=colors.sidebar_text,
+                    hover_color=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
+                )
+
+                self.menu_containers.append(menu_tile)
+                sidebar_controls.append(menu_tile)
 
         # 3. Spacer
         sidebar_controls.append(ft.Container(height=20, expand=True))
@@ -130,7 +181,7 @@ class Sidebar(ft.Container):
                 gradient=ft.LinearGradient(
                     begin=ft.alignment.top_left, 
                     end=ft.alignment.bottom_right, 
-                    colors=["#2E1065", "#4C1D95", "#6D28D9"]
+                    colors=["#0F172A", "#1D4ED8", "#0F766E"]
                 ),
                 border_radius=16,
                 border=ft.border.all(1, ft.Colors.with_opacity(0.3, ft.Colors.WHITE)),
@@ -141,7 +192,7 @@ class Sidebar(ft.Container):
                         gradient=ft.LinearGradient(
                             begin=ft.alignment.top_left, 
                             end=ft.alignment.bottom_right, 
-                            colors=["#2E1065", "#4C1D95", "#6D28D9"]
+                            colors=["#0F172A", "#1D4ED8", "#0F766E"]
                         ),
                         border_radius=20,
                         alignment=ft.alignment.center,
@@ -187,4 +238,3 @@ class Sidebar(ft.Container):
         self._build_sidebar_content(colors)
         if self.page:
             self.update()
-

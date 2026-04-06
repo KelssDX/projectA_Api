@@ -53,18 +53,28 @@ class UnifiedAssessmentForm(BaseView):
         super().__init__(page, "Risk Assessment Form", actions=actions, colors=colors)
 
         # Controllers
-        self.assessment_controller = AssessmentController()
+        self.assessment_controller = AssessmentController(user)
         self.api_client = AuditingAPIClient()
+        self.api_client.set_current_user(user)
 
         # State
         self.items = []
         self.selected_item_index = None
         self._auto_save_enabled = True
         self._view_mode = "table"  # "table" or "cards"
+        self.reference_locked_for_edit = False
+        self.reference_status_name = "Draft"
+        self.edit_lock_reason = ""
 
         self._category_items_raw = []
         self._evidence_items_raw = []
         self._data_freq_items_raw = []
+        self._department_items_raw = []
+        self._project_items_raw = []
+        self._pending_department_id = None
+        self._pending_project_id = None
+        self._pending_department_name = ""
+        self._pending_project_name = ""
 
         self._register_date_pickers()
 
@@ -81,6 +91,8 @@ class UnifiedAssessmentForm(BaseView):
             ft.dropdown.Option("Compliance"), ft.dropdown.Option("IT & Security"), ft.dropdown.Option("Other")
         ], width=200)
         self.process_tf = ft.TextField(label="Process / Area", hint_text="e.g., Billing", width=200, border=ft.InputBorder.OUTLINE)
+        self.department_dd = ft.Dropdown(label="Department", width=220, border=ft.InputBorder.OUTLINE)
+        self.project_dd = ft.Dropdown(label="Audit Project", width=260, border=ft.InputBorder.OUTLINE)
         self.assessor_tf = ft.TextField(label="Assessor", hint_text="Your name", width=180, border=ft.InputBorder.OUTLINE)
         self.date_tf = ft.TextField(
             label="Date",
@@ -124,9 +136,11 @@ class UnifiedAssessmentForm(BaseView):
             content=ft.Column([
                 ft.Row([self.title_tf], spacing=12),
                 ft.Row([
-                    self.category_dd, self.process_tf,
+                    self.category_dd, self.process_tf, self.department_dd, self.project_dd
+                ], spacing=12, wrap=True),
+                ft.Row([
                     self.assessor_tf, self.date_tf, self.status_dd, self.approved_by_tf
-                ], spacing=12),
+                ], spacing=12, wrap=True),
             ], spacing=12),
             padding=16,
             bgcolor=colors.hover_bg,
@@ -153,6 +167,21 @@ class UnifiedAssessmentForm(BaseView):
 
         # Compose
         self.cards_column.controls.clear()
+        lock_banner = None
+        if self.reference_locked_for_edit:
+            banner_text = "This audit file is locked for editing"
+            if self.edit_lock_reason:
+                banner_text = f"{banner_text} because {self.edit_lock_reason}."
+            lock_banner = ft.Container(
+                padding=12,
+                bgcolor="#fff7ed",
+                border=ft.border.all(1, "#fdba74"),
+                border_radius=8,
+                content=ft.Row([
+                    ft.Icon(Icons.LOCK, color="#c2410c", size=18),
+                    ft.Text(banner_text, color="#9a3412", size=12, weight=ft.FontWeight.W_500),
+                ], spacing=10),
+            )
         
         # Mode selector
         header_controls = ft.Row([
@@ -165,6 +194,8 @@ class UnifiedAssessmentForm(BaseView):
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
         
         self.add_card(header_controls)
+        if lock_banner:
+            self.cards_column.controls.append(lock_banner)
         self.cards_column.controls.append(meta_section)
         self.cards_column.controls.append(self.view_container)
 
@@ -300,7 +331,7 @@ class UnifiedAssessmentForm(BaseView):
         """Build the right panel detail form with tabs"""
         # Risk Details Tab
         self.d_title = ft.TextField(label="Risk Title", border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change(), expand=True)
-        self.d_desc = ft.TextField(label="Description", multiline=True, min_lines=3, max_lines=5, border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change(), expand=True)
+        self.d_desc = ft.TextField(label="Business Objective / Description", multiline=True, min_lines=3, max_lines=5, border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change(), expand=True)
         self.d_category = ft.Dropdown(label="Risk Category", options=[], on_change=lambda e: self._on_detail_change())
         self.d_process = ft.TextField(label="Process", border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change())
         self.d_owner = ft.TextField(label="Owner", border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change())
@@ -351,7 +382,7 @@ class UnifiedAssessmentForm(BaseView):
         )
 
         # Controls Tab
-        self.d_controls = ft.TextField(label="Mitigating Controls", multiline=True, min_lines=3, max_lines=5, border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change())
+        self.d_controls = ft.TextField(label="Control Description", multiline=True, min_lines=3, max_lines=5, border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change())
         self.d_effectiveness = ft.Dropdown(
             label="Control Effectiveness",
             options=[ft.dropdown.Option(str(i), f"{i} - {['Very Low', 'Low', 'Medium', 'High', 'Very High'][i-1]}") for i in range(1, 6)],
@@ -406,7 +437,7 @@ class UnifiedAssessmentForm(BaseView):
             read_only=True,
             suffix=ft.IconButton(icon=Icons.CALENDAR_MONTH, on_click=lambda e: self._open_date_picker(self.d_due_picker)),
         )
-        self.d_notes = ft.TextField(label="Action Plan / Notes", multiline=True, min_lines=3, max_lines=5, border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change())
+        self.d_notes = ft.TextField(label="Outcome / Action Description", multiline=True, min_lines=3, max_lines=5, border=ft.InputBorder.OUTLINE, on_change=lambda e: self._on_detail_change())
 
         residual_tab = ft.Container(
             content=ft.Column([
@@ -482,17 +513,20 @@ class UnifiedAssessmentForm(BaseView):
         self.table = ft.DataTable(
             columns=[
                 ft.DataColumn(ft.Text("Title", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(0)),
-                ft.DataColumn(ft.Text("Category", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(1)),
-                ft.DataColumn(ft.Text("Process", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(2)),
-                ft.DataColumn(ft.Text("L", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(3)),
-                ft.DataColumn(ft.Text("I", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(4)),
-                ft.DataColumn(ft.Text("Inherent", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(5)),
-                ft.DataColumn(ft.Text("Res L", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(6)),
-                ft.DataColumn(ft.Text("Res I", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(7)),
-                ft.DataColumn(ft.Text("Res Score", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(8)),
-                ft.DataColumn(ft.Text("Owner", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(9)),
-                ft.DataColumn(ft.Text("Due", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(10)),
-                ft.DataColumn(ft.Text("Evidence", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(11)),
+                ft.DataColumn(ft.Text("Description", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(1)),
+                ft.DataColumn(ft.Text("Category", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(2)),
+                ft.DataColumn(ft.Text("Process", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(3)),
+                ft.DataColumn(ft.Text("Control Description", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(4)),
+                ft.DataColumn(ft.Text("Outcome / Action", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(5)),
+                ft.DataColumn(ft.Text("L", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(6)),
+                ft.DataColumn(ft.Text("I", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(7)),
+                ft.DataColumn(ft.Text("Inherent", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(8)),
+                ft.DataColumn(ft.Text("Res L", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(9)),
+                ft.DataColumn(ft.Text("Res I", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(10)),
+                ft.DataColumn(ft.Text("Res Score", size=11, weight=ft.FontWeight.BOLD), numeric=True, on_sort=lambda e: self._on_sort(11)),
+                ft.DataColumn(ft.Text("Owner", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(12)),
+                ft.DataColumn(ft.Text("Due", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(13)),
+                ft.DataColumn(ft.Text("Evidence", size=11, weight=ft.FontWeight.BOLD), on_sort=lambda e: self._on_sort(14)),
                 ft.DataColumn(ft.Text("Actions", size=11, weight=ft.FontWeight.BOLD)),
             ],
             rows=[],
@@ -669,9 +703,15 @@ class UnifiedAssessmentForm(BaseView):
             print(f"DEBUG: Page updated after selecting item {index}")
 
     def _add_new_risk(self, select_current=True):
+        if self._effective_read_only():
+            self._show_error("This audit file is locked for edits.")
+            return
         self._open_item_modal(None)
 
     def _delete_selected_risk(self):
+        if self._effective_read_only():
+            self._show_error("This audit file is locked for edits.")
+            return
         if self.selected_item_index is not None and self.selected_item_index < len(self.items):
             del self.items[self.selected_item_index]
             self.selected_item_index = None
@@ -683,6 +723,9 @@ class UnifiedAssessmentForm(BaseView):
             self._refresh_table_rows()
 
     def _duplicate_risk(self):
+        if self._effective_read_only():
+            self._show_error("This audit file is locked for edits.")
+            return
         if self.selected_item_index is not None and self.selected_item_index < len(self.items):
             original = self.items[self.selected_item_index]
             duplicate = dict(original)
@@ -813,6 +856,12 @@ class UnifiedAssessmentForm(BaseView):
             
             if assessment_data and 'riskAssessments' in assessment_data:
                 print(f"DEBUG: Loaded {len(assessment_data['riskAssessments'])} risk assessments")
+                self._set_reference_lock_state(
+                    assessment_data.get("isLockedForEdit", False),
+                    assessment_data.get("statusName", ""),
+                    assessment_data.get("approvedBy", ""),
+                )
+                self.status_dd.value = assessment_data.get("statusName") or self.status_dd.value
                 
                 self.items = []
                 for risk_data in assessment_data['riskAssessments']:
@@ -820,7 +869,7 @@ class UnifiedAssessmentForm(BaseView):
                         'id': risk_data.get('riskAssessment_RefID'),
                         'ref_id': risk_data.get('riskAssessment_RefID'),
                         'title': risk_data.get('risksAssessment_KeyRiskAndFactors', ''),
-                        'desc': risk_data.get('processObjectivesAssessment_BusinessObjectives', ''),
+                        'desc': risk_data.get('processObjectivesAssessment_Description') or risk_data.get('processObjectivesAssessment_BusinessObjectives', ''),
                         'riskCategory': risk_data.get('risksAssessment_RiskCategory', ''),
                         'process': risk_data.get('processObjectivesAssessment_MainProcess', ''),
                         'sub_process': risk_data.get('processObjectivesAssessment_SubProcess', ''),
@@ -832,20 +881,21 @@ class UnifiedAssessmentForm(BaseView):
                         'responsible': risk_data.get('outcomeAssessment_ResponsiblePerson', ''),
                         'due': risk_data.get('outcomeAssessment_AgreedDate', ''),
                         'evidence': risk_data.get('outcomeAssessment_Evidence', ''),
-                        'controls': risk_data.get('controlsAssessment_MitigatingControls', ''),
+                        'controls': risk_data.get('controlsAssessment_Description') or risk_data.get('controlsAssessment_MitigatingControls', ''),
                         'effectiveness': risk_data.get('controlsAssessment_Effectiveness', ''),
                         'preventive': risk_data.get('controlsAssessment_Preventive'),
                         'responsive': risk_data.get('controlsAssessment_Responsive'),
                         'data_frequency': risk_data.get('controlsAssessment_DataFrequency', ''),
                         'frequency': risk_data.get('controlsAssessment_Frequency', ''),
                         'keyOrSecondary': risk_data.get('risksAssessment_KeyOrSecondary', ''),
-                        'notes': risk_data.get('outcomeAssessment_AuditorsRecommendedActionPlan', ''),
+                        'notes': risk_data.get('outcomeAssessment_Description') or risk_data.get('outcomeAssessment_AuditorsRecommendedActionPlan', ''),
                         'authoriser': risk_data.get('outcomeAssessment_Authoriser', ''),
                     }
                     self.items.append(self._normalize_risk_item(item))
                 
                 self._refresh_items_list()
                 self._refresh_table_rows()
+                self._apply_mode_disabled()
                 print(f"DEBUG: Views refreshed with {len(self.items)} items")
             else:
                 print("DEBUG: No risk assessment data found")
@@ -860,14 +910,44 @@ class UnifiedAssessmentForm(BaseView):
         self._apply_mode_disabled()
         self._refresh_table_rows()
 
+    def _effective_read_only(self):
+        return self.mode == "view" or self.reference_locked_for_edit
+
+    def _set_reference_lock_state(self, locked, status_name="", approved_by=""):
+        self.reference_locked_for_edit = bool(locked)
+        self.reference_status_name = status_name or self.reference_status_name or "Draft"
+
+        reason_parts = []
+        if status_name:
+            reason_parts.append(f"status is {status_name}")
+        if approved_by and approved_by not in ("Pending Approval", ""):
+            reason_parts.append(f"approved by {approved_by}")
+        if locked and not reason_parts:
+            reason_parts.append("it is no longer editable")
+        self.edit_lock_reason = ", ".join(reason_parts)
+
     def _apply_mode_disabled(self):
-        disabled = self.mode == "view"
+        disabled = self._effective_read_only()
         # Note: approved_by_tf is always read-only (set via approval workflow)
         for ctrl in [self.title_tf, self.category_dd, self.process_tf, self.assessor_tf, self.date_tf, self.status_dd]:
             if isinstance(ctrl, ft.TextField):
                 ctrl.read_only = disabled
             if isinstance(ctrl, ft.Dropdown):
                 ctrl.disabled = disabled
+        if hasattr(self, "save_risk_btn") and self.save_risk_btn:
+            self.save_risk_btn.disabled = disabled
+        if hasattr(self, "delete_btn") and self.delete_btn:
+            self.delete_btn.disabled = disabled
+        if hasattr(self, "duplicate_btn") and self.duplicate_btn:
+            self.duplicate_btn.disabled = disabled
+        if hasattr(self, "add_card_btn") and self.add_card_btn:
+            self.add_card_btn.disabled = disabled
+        if hasattr(self, "add_table_btn") and self.add_table_btn:
+            self.add_table_btn.disabled = disabled
+        if hasattr(self, "export_btn") and self.export_btn:
+            self.export_btn.disabled = False
+        if hasattr(self, "approved_by_tf") and self.approved_by_tf:
+            self.approved_by_tf.read_only = True
         if hasattr(self, 'page') and self.page:
             self.page.update()
 
@@ -1009,6 +1089,37 @@ class UnifiedAssessmentForm(BaseView):
                     return entry
         return None
 
+    def _normalize_optional_int(self, value):
+        try:
+            return int(value) if value is not None and str(value).strip() else None
+        except (TypeError, ValueError):
+            return None
+
+    def _sync_reference_link_dropdowns(self):
+        def resolve_dropdown_value(items, selected_id, selected_name):
+            normalized_id = self._normalize_optional_int(selected_id)
+            if normalized_id is not None:
+                for item in items or []:
+                    item_id = self._normalize_optional_int(item.get("id") if isinstance(item, dict) else None)
+                    if item_id == normalized_id:
+                        return str(normalized_id)
+            if selected_name:
+                resolved_id = self._resolve_lookup_id(items, selected_name, label_keys=("name",))
+                if resolved_id is not None:
+                    return str(resolved_id)
+            return None
+
+        self.department_dd.value = resolve_dropdown_value(
+            self._department_items_raw,
+            self._pending_department_id,
+            self._pending_department_name
+        )
+        self.project_dd.value = resolve_dropdown_value(
+            self._project_items_raw,
+            self._pending_project_id,
+            self._pending_project_name
+        )
+
     def _on_header_date_pick(self, e):
         if e.control.value:
             # Extract date-only value (YYYY-MM-DD)
@@ -1118,10 +1229,20 @@ class UnifiedAssessmentForm(BaseView):
                     
                     self.title_tf.value = src.get("title") or src.get("Title") or src.get("client", "") or src.get("Client", "")
                     self.assessor_tf.value = src.get("assessor") or src.get("Assessor") or src.get("auditor", "")
+                    self._pending_department_id = src.get("departmentId") or src.get("department_id") or src.get("DepartmentId")
+                    self._pending_project_id = src.get("projectId") or src.get("project_id") or src.get("ProjectId")
+                    self._pending_department_name = src.get("department") or src.get("Department") or ""
+                    self._pending_project_name = src.get("project") or src.get("Project") or ""
+                    self._sync_reference_link_dropdowns()
                     
                     # Display ApprovedBy from database (read-only)
                     approved_by = src.get("approvedBy") or src.get("ApprovedBy") or src.get("approved_by", "")
                     self.approved_by_tf.value = approved_by if approved_by else "Pending Approval"
+                    self._set_reference_lock_state(
+                        src.get("isLockedForEdit") or src.get("IsLockedForEdit") or False,
+                        src.get("statusName") or src.get("StatusName") or src.get("status") or src.get("Status") or "",
+                        approved_by,
+                    )
 
                     primary_process = src.get("process") or src.get("mainProcess") or src.get("MainProcess")
                     if primary_process:
@@ -1137,7 +1258,13 @@ class UnifiedAssessmentForm(BaseView):
                         self.date_tf.value = ""
                     self._set_date_picker_value(self.date_picker, self.date_tf.value)
 
-                    status_value = src.get("status") or src.get("Status") or self.status_dd.value or "Draft"
+                    status_value = src.get("statusName") or src.get("StatusName") or src.get("status") or src.get("Status") or self.status_dd.value or "Draft"
+                    if status_value == "Reference is currently active":
+                        status_value = "Draft"
+                    if status_value == "Reference has been completed":
+                        status_value = "Approved"
+                    if status_value == "Reference has been cancelled":
+                        status_value = "Archived"
                     self.status_dd.value = status_value
 
                     risks = []
@@ -1156,12 +1283,12 @@ class UnifiedAssessmentForm(BaseView):
 
                             risk_item = {
                                 "title": ra.get("risksAssessment_KeyRiskAndFactors", ""),
-                                "desc": ra.get("processObjectivesAssessment_BusinessObjectives", ""),
+                                "desc": ra.get("processObjectivesAssessment_Description") or ra.get("processObjectivesAssessment_BusinessObjectives", ""),
                                 "likelihood": self._parse_likelihood(likelihood_text),
                                 "likelihood_label": likelihood_text,
                                 "impact": self._parse_impact(impact_text),
                                 "impact_label": impact_text,
-                                "controls": ra.get("controlsAssessment_MitigatingControls", ""),
+                                "controls": ra.get("controlsAssessment_Description") or ra.get("controlsAssessment_MitigatingControls", ""),
                                 "effectiveness": self._parse_likelihood(effectiveness_text) if effectiveness_text else None,
                                 "effectiveness_label": effectiveness_text,
                                 "resL": self._parse_likelihood(residual_likelihood_text),
@@ -1172,7 +1299,7 @@ class UnifiedAssessmentForm(BaseView):
                                 "responsible": ra.get("outcomeAssessment_ResponsiblePerson", ""),
                                 "authoriser": ra.get("outcomeAssessment_Authoriser", ""),
                                 "due": self._format_date(ra.get("outcomeAssessment_AgreedDate")),
-                                "notes": ra.get("outcomeAssessment_AuditorsRecommendedActionPlan", ""),
+                                "notes": ra.get("outcomeAssessment_Description") or ra.get("outcomeAssessment_AuditorsRecommendedActionPlan", ""),
                                 "riskCategory": ra.get("risksAssessment_RiskCategory", ""),
                                 "keyOrSecondary": ra.get("risksAssessment_KeyOrSecondary", ""),
                                 "process": ra.get("processObjectivesAssessment_MainProcess", ""),
@@ -1196,10 +1323,16 @@ class UnifiedAssessmentForm(BaseView):
                         self.category_dd.value = first_category
 
                     self.items = risks
+                    self._apply_mode_disabled()
 
                 else:
                     self.title_tf.value = getv("title") or ""
                     self.assessor_tf.value = getv("auditor") or ""
+                    self._pending_department_id = getv("department_id") or getv("departmentId") or getv("DepartmentId")
+                    self._pending_project_id = getv("project_id") or getv("projectId") or getv("ProjectId")
+                    self._pending_department_name = getv("department") or getv("Department") or ""
+                    self._pending_project_name = getv("project") or getv("Project") or ""
+                    self._sync_reference_link_dropdowns()
                     dt = getv("assessment_date") or getv("date")
                     if isinstance(dt, str):
                         self.date_tf.value = dt.split("T")[0]
@@ -1348,9 +1481,19 @@ class UnifiedAssessmentForm(BaseView):
 
     async def _load_lookups(self):
         try:
-            cats = await self.assessment_controller.get_risk_categories()
-            evid = await self.assessment_controller.get_evidence()
-            freqs = await self.assessment_controller.get_data_frequencies()
+            cats_task = self.assessment_controller.get_risk_categories()
+            evid_task = self.assessment_controller.get_evidence()
+            freqs_task = self.assessment_controller.get_data_frequencies()
+            departments_task = self.api_client.get_departments()
+            projects_task = self.api_client.get_projects()
+            cats, evid, freqs, departments, projects = await asyncio.gather(
+                cats_task,
+                evid_task,
+                freqs_task,
+                departments_task,
+                projects_task,
+                return_exceptions=True
+            )
 
             def to_text_list(items, key_candidates=("name", "title", "value", "label", "description")):
                 out = []
@@ -1364,9 +1507,11 @@ class UnifiedAssessmentForm(BaseView):
                             out.append(str(it))
                 return out
 
-            self._category_items_raw = cats or []
-            self._evidence_items_raw = evid or []
-            self._data_freq_items_raw = freqs or []
+            self._category_items_raw = cats if isinstance(cats, list) else []
+            self._evidence_items_raw = evid if isinstance(evid, list) else []
+            self._data_freq_items_raw = freqs if isinstance(freqs, list) else []
+            self._department_items_raw = departments if isinstance(departments, list) else []
+            self._project_items_raw = projects if isinstance(projects, list) else []
 
             categories = to_text_list(self._category_items_raw)
             if categories:
@@ -1384,6 +1529,24 @@ class UnifiedAssessmentForm(BaseView):
             freqs_text = to_text_list(self._data_freq_items_raw)
             if freqs_text:
                 self.d_frequency.options = [ft.dropdown.Option(f) for f in freqs_text]
+
+            self.department_dd.options = [
+                ft.dropdown.Option(
+                    key=str(item.get("id")),
+                    text=item.get("name", "Department")
+                )
+                for item in self._department_items_raw
+                if isinstance(item, dict) and item.get("id") is not None
+            ]
+            self.project_dd.options = [
+                ft.dropdown.Option(
+                    key=str(item.get("id")),
+                    text=item.get("name", "Audit Project")
+                )
+                for item in self._project_items_raw
+                if isinstance(item, dict) and item.get("id") is not None
+            ]
+            self._sync_reference_link_dropdowns()
 
             if hasattr(self, 'm_risk_category'):
                 self.m_risk_category.options = [ft.dropdown.Option(c) for c in categories]
@@ -1419,8 +1582,11 @@ class UnifiedAssessmentForm(BaseView):
     def _sort_key_tuple(self, it):
         mapping = [
             self._safe_lower(it.get("title")),
+            self._safe_lower(it.get("desc")),
             self._safe_lower(it.get("riskCategory") or it.get("category")),
             self._safe_lower(it.get("process")),
+            self._safe_lower(it.get("controls")),
+            self._safe_lower(it.get("notes")),
             self._parse_likelihood(it.get("likelihood")) or 0,
             self._parse_impact(it.get("impact")) or 0,
             self._inherent_of(it),
@@ -1440,7 +1606,7 @@ class UnifiedAssessmentForm(BaseView):
         q = q.lower()
         fields = [
             it.get("title"), it.get("riskCategory") or it.get("category"), it.get("process"),
-            it.get("owner"), it.get("evidence"), it.get("desc"), it.get("notes"), it.get("sub_process"),
+            it.get("owner"), it.get("evidence"), it.get("desc"), it.get("controls"), it.get("notes"), it.get("sub_process"),
         ]
         for f in fields:
             if f and q in str(f).lower():
@@ -1460,7 +1626,7 @@ class UnifiedAssessmentForm(BaseView):
             pass
 
         rows = []
-        show_actions = self.mode != "view"
+        show_actions = not self._effective_read_only()
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
 
         def create_text_cell(text, width, max_chars=30):
@@ -1509,11 +1675,15 @@ class UnifiedAssessmentForm(BaseView):
                                        if x.get('title') == it.get('title') and x.get('desc') == it.get('desc')), idx)
 
                 title_text = it.get("title", "") or ""
+                description_text = it.get("desc", "") or ""
                 process_text = it.get("process", "") or ""
+                controls_text = it.get("controls", "") or ""
+                notes_text = it.get("notes", "") or ""
                 owner_text = it.get("owner", "") or ""
                 due_text = it.get("due", "") or ""
                 
                 title_cell = create_text_cell(title_text, 150)
+                description_cell = create_text_cell(description_text, 180)
                 
                 category_text = it.get("riskCategory") or it.get("category") or ""
                 category_options = [
@@ -1533,6 +1703,8 @@ class UnifiedAssessmentForm(BaseView):
                 )
                 
                 process_cell = create_text_cell(process_text, 130)
+                controls_cell = create_text_cell(controls_text, 180)
+                notes_cell = create_text_cell(notes_text, 180)
                 
                 likelihood_value = it.get("likelihood_label") or it.get("likelihood")
                 likelihood_display = str(self._parse_likelihood(likelihood_value) or 1)
@@ -1660,8 +1832,11 @@ class UnifiedAssessmentForm(BaseView):
                     ft.DataRow(
                         cells=[
                             ft.DataCell(title_cell),
+                            ft.DataCell(description_cell),
                             ft.DataCell(category_cell),
                             ft.DataCell(process_cell),
+                            ft.DataCell(controls_cell),
+                            ft.DataCell(notes_cell),
                             ft.DataCell(likelihood_cell),
                             ft.DataCell(impact_cell),
                             ft.DataCell(inherent_field),
@@ -1683,10 +1858,10 @@ class UnifiedAssessmentForm(BaseView):
     def _build_item_modal(self):
         self.m_title = ft.TextField(label="Risk Title", expand=True, border=ft.InputBorder.OUTLINE)
         self.m_owner = ft.TextField(label="Owner", width=260, border=ft.InputBorder.OUTLINE)
-        self.m_desc = ft.TextField(label="Description", multiline=True, min_lines=2, max_lines=4, expand=True, border=ft.InputBorder.OUTLINE)
+        self.m_desc = ft.TextField(label="Business Objective / Description", multiline=True, min_lines=2, max_lines=4, expand=True, border=ft.InputBorder.OUTLINE)
         self.m_likelihood = ft.Dropdown(label="Likelihood (1–5)", width=200, options=[ft.dropdown.Option(str(i)) for i in range(1,6)])
         self.m_impact = ft.Dropdown(label="Impact (1–5)", width=200, options=[ft.dropdown.Option(str(i)) for i in range(1,6)])
-        self.m_controls = ft.TextField(label="Controls", expand=True, border=ft.InputBorder.OUTLINE)
+        self.m_controls = ft.TextField(label="Control Description", expand=True, border=ft.InputBorder.OUTLINE)
         self.m_effectiveness = ft.Dropdown(label="Control Effectiveness (1–5)", width=220, options=[ft.dropdown.Option(str(i)) for i in range(1,6)])
         self.m_resL = ft.Dropdown(label="Residual Likelihood (1–5)", width=220, options=[ft.dropdown.Option(str(i)) for i in range(1,6)])
         self.m_resI = ft.Dropdown(label="Residual Impact (1–5)", width=220, options=[ft.dropdown.Option(str(i)) for i in range(1,6)])
@@ -1697,7 +1872,7 @@ class UnifiedAssessmentForm(BaseView):
             read_only=True,
             suffix=ft.IconButton(icon=Icons.CALENDAR_MONTH, on_click=lambda e: self._open_date_picker(self.m_due_picker)),
         )
-        self.m_notes = ft.TextField(label="Notes", expand=True, border=ft.InputBorder.OUTLINE)
+        self.m_notes = ft.TextField(label="Outcome / Action Description", expand=True, border=ft.InputBorder.OUTLINE)
         self.m_risk_category = ft.Dropdown(label="Risk Category", width=260, options=[])
         self.m_preventive = ft.Dropdown(label="Preventive", width=160, options=[ft.dropdown.Option("N/A"), ft.dropdown.Option("Yes"), ft.dropdown.Option("No")])
         self.m_responsive = ft.Dropdown(label="Responsive", width=160, options=[ft.dropdown.Option("N/A"), ft.dropdown.Option("Yes"), ft.dropdown.Option("No")])
@@ -1720,7 +1895,7 @@ class UnifiedAssessmentForm(BaseView):
                 self.page.update()
 
         def save_item(_):
-            if self.mode == "view":
+            if self._effective_read_only():
                 close_modal(None)
                 return
             
@@ -2029,7 +2204,7 @@ class UnifiedAssessmentForm(BaseView):
 
     def _handle_save(self, e):
         print("DEBUG: _handle_save called")
-        if self.mode == "view":
+        if self._effective_read_only():
             self._show_error("Cannot save in view mode")
             return
         if not self.title_tf.value:
@@ -2043,13 +2218,33 @@ class UnifiedAssessmentForm(BaseView):
         self._enqueue_async_task(self._save_async(scope="all"))
 
     def _handle_save_selected_risk(self, e=None):
-        if self.mode == "view":
+        if self._effective_read_only():
+            self._show_error("This audit file is locked for edits.")
             return
         if self.selected_item_index is None or self.selected_item_index >= len(self.items):
             self._show_error("Select a risk to save")
             return
         self._update_selected_item()
         self._enqueue_async_task(self._save_async(scope="risk", items_override=[self.items[self.selected_item_index]]))
+
+    def _build_reference_payload(self):
+        approved_by_value = self.approved_by_tf.value if self.approved_by_tf.value != "Pending Approval" else ""
+        reference_description = (self.process_tf.value or self.title_tf.value or "").strip()
+        assessment_date = self._parse_date_input(self.date_tf.value)
+        department_id = self._normalize_optional_int(self.department_dd.value)
+        project_id = self._normalize_optional_int(self.project_dd.value)
+        return {
+            "Client": self.process_tf.value or "",
+            "AssessmentStartDate": assessment_date,
+            "AssessmentEndDate": assessment_date,
+            "Assessor": self.assessor_tf.value or (self.user.get("username") if isinstance(self.user, dict) else None),
+            "ApprovedBy": approved_by_value,
+            "DepartmentId": department_id,
+            "ProjectId": project_id,
+            "Title": self.title_tf.value or "",
+            "Description": reference_description,
+            "StatusName": self.status_dd.value or "Draft",
+        }
 
     def _build_create_payload(self, items, reference_id=None):
         item_payloads = []
@@ -2067,11 +2262,15 @@ class UnifiedAssessmentForm(BaseView):
                 "BusinessObjectives": it.get("desc"),
                 "MainProcess": self.process_tf.value,
                 "SubProcess": it.get("sub_process"),
+                "BusinessObjectiveDescription": it.get("desc"),
                 "KeyRiskAndFactors": it.get("title"),
+                "RiskDescription": it.get("desc") or it.get("title"),
                 "MitigatingControls": it.get("controls"),
+                "ControlDescription": it.get("controls"),
                 "Responsibility": it.get("owner"),
                 "Authoriser": it.get("authoriser"),
                 "AuditorsRecommendedActionPlan": it.get("notes"),
+                "OutcomeDescription": it.get("notes"),
                 "ResponsiblePerson": it.get("responsible"),
                 "AgreedDate": self._parse_date_input(it.get("due")),
                 "RiskLikelihoodId": likelihood_id,
@@ -2082,7 +2281,8 @@ class UnifiedAssessmentForm(BaseView):
                 "FrequencyId": frequency_id,
                 "EvidenceId": evidence_id,
                 "OutcomeLikelihoodId": residual_likelihood_id,
-                "ImpactId": residual_impact_id
+                "ImpactId": residual_impact_id,
+                "StatusId": 1,
             })
 
         if not item_payloads:
@@ -2090,11 +2290,15 @@ class UnifiedAssessmentForm(BaseView):
                 "BusinessObjectives": "",
                 "MainProcess": self.process_tf.value,
                 "SubProcess": None,
+                "BusinessObjectiveDescription": "",
                 "KeyRiskAndFactors": self.title_tf.value,
+                "RiskDescription": "",
                 "MitigatingControls": None,
+                "ControlDescription": None,
                 "Responsibility": self.assessor_tf.value or (self.user.get("username") if isinstance(self.user, dict) else None),
                 "Authoriser": None,
                 "AuditorsRecommendedActionPlan": None,
+                "OutcomeDescription": None,
                 "ResponsiblePerson": None,
                 "AgreedDate": None,
                 "RiskLikelihoodId": None,
@@ -2105,7 +2309,8 @@ class UnifiedAssessmentForm(BaseView):
                 "FrequencyId": None,
                 "EvidenceId": None,
                 "OutcomeLikelihoodId": None,
-                "ImpactId": None
+                "ImpactId": None,
+                "StatusId": 1,
             }]
 
         payload = {"Assessments": item_payloads}
@@ -2113,17 +2318,7 @@ class UnifiedAssessmentForm(BaseView):
         if reference_id:
             payload["ReferenceId"] = reference_id
         else:
-            payload["Reference"] = {
-                "Client": self.process_tf.value or "",
-                "AssessmentStartDate": self._parse_date_input(self.date_tf.value) or None,
-                "AssessmentEndDate": None,
-                "Assessor": self.assessor_tf.value or (self.user.get("username") if isinstance(self.user, dict) else None),
-                "ApprovedBy": None,
-                "Title": self.title_tf.value,
-                "Status": self.status_dd.value or "Draft",
-                "Overview": "",
-                "Comments": ""
-            }
+            payload["Reference"] = self._build_reference_payload()
 
         return payload
 
@@ -2139,13 +2334,18 @@ class UnifiedAssessmentForm(BaseView):
                 "BusinessObjectives": item.get("desc", ""),
                 "MainProcess": self.process_tf.value or "",
                 "SubProcess": item.get("sub_process", ""),
+                "BusinessObjectiveDescription": item.get("desc", ""),
                 "KeyRiskAndFactors": item.get("title", ""),
+                "RiskDescription": item.get("desc", "") or item.get("title", ""),
                 "MitigatingControls": item.get("controls", ""),
+                "ControlDescription": item.get("controls", ""),
                 "Responsibility": item.get("owner", ""),
                 "Authoriser": item.get("authoriser", ""),
                 "AuditorsRecommendedActionPlan": item.get("notes", ""),
+                "OutcomeDescription": item.get("notes", ""),
                 "ResponsiblePerson": item.get("responsible", ""),
-                "AgreedDate": self._parse_date_input(item.get("due"))
+                "AgreedDate": self._parse_date_input(item.get("due")),
+                "StatusId": 1,
             }
 
             likelihood_id = self._parse_likelihood(item.get("likelihood") or item.get("likelihood_label"))
@@ -2188,25 +2388,7 @@ class UnifiedAssessmentForm(BaseView):
             reference_error = None
             
             if self.mode == "edit" and self.reference_id:
-                # Update the reference header (Assessor, Title, etc.)
-                # ApprovedBy is read-only - pass existing value or empty string
-                approved_by_value = self.approved_by_tf.value if self.approved_by_tf.value != "Pending Approval" else ""
-                reference_data = {
-                    "Client": self.process_tf.value or "",
-                    "AssessmentStartDate": self._parse_date_input(self.date_tf.value),
-                    "AssessmentEndDate": self._parse_date_input(self.date_tf.value),
-                    "Assessor": self.assessor_tf.value or "",
-                    "ApprovedBy": approved_by_value
-                }
-                print(f"DEBUG: Updating reference with data: {reference_data}")
-                try:
-                    ref_result = await self.api_client.update_reference(self.reference_id, reference_data)
-                    print(f"DEBUG: Reference update result: {ref_result}")
-                    reference_updated = True
-                except Exception as ref_err:
-                    print(f"DEBUG: Reference update error: {ref_err}")
-                    reference_error = str(ref_err)
-                
+                reference_data = self._build_reference_payload()
                 # Update the risk items
                 existing_items = [it for it in items_to_use if it.get("ref_id") or it.get("id") or it.get("RiskAssessment_RefID")]
                 new_items = [it for it in items_to_use if not (it.get("ref_id") or it.get("id") or it.get("RiskAssessment_RefID"))]
@@ -2223,9 +2405,18 @@ class UnifiedAssessmentForm(BaseView):
                     create_payload = self._build_create_payload(new_items, reference_id=self.reference_id)
                     create_result = await self.assessment_controller.create_risk_assessment(create_payload)
                     result = create_result or result
+
+                print(f"DEBUG: Updating reference with data: {reference_data}")
+                try:
+                    ref_result = await self.api_client.update_reference(self.reference_id, reference_data)
+                    print(f"DEBUG: Reference update result: {ref_result}")
+                    reference_updated = True
+                except Exception as ref_err:
+                    print(f"DEBUG: Reference update error: {ref_err}")
+                    reference_error = str(ref_err)
                 
                 # If no items were updated/created but reference was updated, consider it a success
-                if result is None and reference_data:
+                if result is None and reference_updated:
                     result = {"success": True, "message": "Reference updated"}
             else:
                 payload = self._build_create_payload(items_to_use)
@@ -2240,7 +2431,7 @@ class UnifiedAssessmentForm(BaseView):
                 else:
                     success_message = "Assessment saved successfully!" if scope == "all" else "Risk item saved successfully!"
                     print(f"DEBUG: Save successful - {success_message}")
-                self._show_success(success_message)
+                    self._show_success(success_message)
                 
                 if self.mode == "edit" and self.reference_id:
                     try:

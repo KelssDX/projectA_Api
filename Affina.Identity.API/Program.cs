@@ -1,3 +1,4 @@
+using Affine.Engine.Repository.Auditing;
 using Affine.Engine.Repository.Identity;
 using Microsoft.OpenApi.Models;
 using Npgsql;
@@ -5,6 +6,9 @@ using Npgsql;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 // Add Swagger generation with a Swagger document for the API
 builder.Services.AddSwaggerGen(c =>
@@ -21,6 +25,8 @@ connectionStringBuilder.SearchPath = "\"Risk_Assess_Framework\",public,\"$user\"
 // Add scoped dependency injection for IUserRepository and UserRepository with the modified connection string
 builder.Services.AddScoped<IUserRepository, UserRepository>(provider =>
     new UserRepository(connectionStringBuilder.ToString()));
+builder.Services.AddScoped<IAuditAccessLogRepository, AuditAccessLogRepository>(provider =>
+    new AuditAccessLogRepository(connectionStringBuilder.ToString()));
 
 builder.Services.AddControllers();
 
@@ -37,7 +43,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Your API V1"));
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseRouting();
 

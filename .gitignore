@@ -361,3 +361,15 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local Codex scratch/output directories
+.codex_build/
+.codex_intermediate/
+.codex_merge_master_worktree/
+.codex_smoke/
+.codex_tmp/
+**/.codex_obj/
+
+# Local runtime/output artifacts
+Affine.Auditing.API/uploads/
+*.stackdump
