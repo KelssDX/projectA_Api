@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Assessment:
@@ -6,11 +6,64 @@ class Assessment:
     Model representing a risk assessment.
     """
 
+    @staticmethod
+    def _parse_date_value(value):
+        if not isinstance(value, str):
+            return value
+
+        raw = value.strip()
+        if not raw:
+            return None
+
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+        except ValueError:
+            pass
+
+        for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+
+        return None
+
+    @staticmethod
+    def _parse_datetime_value(value):
+        if not isinstance(value, str):
+            return value
+
+        raw = value.strip()
+        if not raw:
+            return None
+
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed
+        except ValueError:
+            pass
+
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d",
+        ):
+            try:
+                return datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+
+        return None
+
     def __init__(self, id=None, reference_id=None, title=None, department_id=None, department=None,
                  project_id=None, project=None, auditor_id=None, auditor=None,
                  assessment_date=None, risk_score=None, risk_level=None,
                  scope=None, findings=None, recommendations=None, risk_factors=None,
-                 created_at=None, updated_at=None):
+                 created_at=None, updated_at=None, engagement_type_id=None, engagement_type_name=None):
         """
         Initialize an assessment object.
 
@@ -51,6 +104,8 @@ class Assessment:
         self.risk_factors = risk_factors or []
         self.created_at = created_at
         self.updated_at = updated_at
+        self.engagement_type_id = engagement_type_id
+        self.engagement_type_name = engagement_type_name
 
     @classmethod
     def from_json(cls, json_data):
@@ -99,32 +154,13 @@ class Assessment:
             json_data.get("assessment_date")
             or json_data.get("assessmentDate")
         )
-        if isinstance(assessment_date, str):
-            try:
-                assessment_date = datetime.strptime(assessment_date, "%Y-%m-%d").date()
-            except ValueError:
-                try:
-                    assessment_date = datetime.strptime(assessment_date, "%Y-%m-%dT%H:%M:%S").date()
-                except ValueError:
-                    pass
+        assessment_date = cls._parse_date_value(assessment_date)
 
         created_at = json_data.get("created_at") or json_data.get("createdAt")
-        if isinstance(created_at, str):
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
-                try:
-                    created_at = datetime.strptime(created_at, fmt)
-                    break
-                except ValueError:
-                    continue
+        created_at = cls._parse_datetime_value(created_at)
 
         updated_at = json_data.get("updated_at") or json_data.get("updatedAt")
-        if isinstance(updated_at, str):
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
-                try:
-                    updated_at = datetime.strptime(updated_at, fmt)
-                    break
-                except ValueError:
-                    continue
+        updated_at = cls._parse_datetime_value(updated_at)
 
         risk_factors = json_data.get("risk_factors") or json_data.get("riskFactors") or []
         if isinstance(risk_factors, list):
@@ -159,7 +195,9 @@ class Assessment:
             recommendations=json_data.get("recommendations"),
             risk_factors=risk_factors,
             created_at=created_at,
-            updated_at=updated_at
+            updated_at=updated_at,
+            engagement_type_id=json_data.get("engagement_type_id") or json_data.get("engagementTypeId"),
+            engagement_type_name=json_data.get("engagement_type_name") or json_data.get("engagementTypeName"),
         )
 
     def to_json(self):
@@ -213,6 +251,8 @@ class Assessment:
             "created_at": created_at,
             "updated_at": updated_at,
             "reference_id": self.reference_id,
+            "engagement_type_id": self.engagement_type_id,
+            "engagement_type_name": self.engagement_type_name,
         }
 
     def __str__(self):

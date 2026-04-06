@@ -1,3 +1,5 @@
+import inspect
+
 import flet as ft
 from flet import Icons
 from typing import Callable, List, Optional
@@ -57,11 +59,14 @@ class BaseView(ft.Container):
         left_controls: List[ft.Control] = []
         if on_back:
             left_controls.append(
-                ft.IconButton(Icons.ARROW_BACK, icon_color=self.colors.primary, on_click=lambda e: on_back())
+                ft.IconButton(
+                    Icons.ARROW_BACK,
+                    icon_color=self.colors.primary,
+                    on_click=lambda e: self._invoke_callback(on_back, e),
+                )
             )
-        left_controls.append(
-            ft.Text(title, size=22, weight=ft.FontWeight.BOLD, color=self.colors.text_primary)
-        )
+        self.header_title = ft.Text(title, size=22, weight=ft.FontWeight.BOLD, color=self.colors.text_primary)
+        left_controls.append(self.header_title)
 
         right_controls: List[ft.Control] = []
         if self.search_field:
@@ -79,6 +84,7 @@ class BaseView(ft.Container):
             ],
             alignment=ft.MainAxisAlignment.START if not right_controls else ft.MainAxisAlignment.SPACE_BETWEEN,
         )
+        self.header = header
 
         # Column for all cards (stretch children to full width)
         self.cards_column = ft.Column(
@@ -99,6 +105,26 @@ class BaseView(ft.Container):
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
         )
+
+    @staticmethod
+    def _invoke_callback(callback: Callable, event: Optional[ft.ControlEvent] = None) -> None:
+        """Support both zero-arg callbacks and Flet event handlers."""
+        try:
+            signature = inspect.signature(callback)
+            required_args = [
+                parameter
+                for parameter in signature.parameters.values()
+                if parameter.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                and parameter.default is inspect.Parameter.empty
+            ]
+        except (TypeError, ValueError):
+            required_args = [object()]
+
+        if required_args:
+            callback(event)
+            return
+
+        callback()
 
     def add_card(self, control: ft.Control) -> ft.Control:
         """Wrap content in a themed card and add it to the view."""

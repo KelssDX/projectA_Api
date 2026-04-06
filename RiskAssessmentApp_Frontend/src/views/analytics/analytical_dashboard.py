@@ -2,9 +2,13 @@ import flet as ft
 from flet import Icons, Colors
 import asyncio
 import json
+import csv
+import os
 from src.utils.theme import get_theme_colors, create_modern_card
+from src.utils.permissions import can_import_analytics
 from src.views.common.base_view import BaseView
 from src.controllers.assessment_controller import AssessmentController
+from src.core.config import POWER_BI_CONFIG
 
 # Widget Imports
 from src.views.widgets.risk_charts_widget import (
@@ -25,19 +29,32 @@ from src.views.widgets.department_comparison_widget import DepartmentComparisonW
 from src.views.widgets.control_effectiveness_widget import ControlEffectivenessWidget
 from src.views.widgets.heatmap_embed_widget import HeatmapEmbedWidget
 from src.views.widgets.compliance_scorecard_widget import ComplianceScorecardWidget
+from src.views.widgets.management_override_widget import ManagementOverrideAnalyticsWidget
+from src.views.widgets.journal_exception_widget import JournalExceptionAnalyticsWidget
+from src.views.widgets.user_posting_concentration_widget import UserPostingConcentrationWidget
+from src.views.widgets.trial_balance_movement_widget import TrialBalanceMovementWidget
+from src.views.widgets.industry_benchmark_widget import IndustryBenchmarkWidget
+from src.views.widgets.reasonability_forecast_widget import ReasonabilityForecastWidget
+from src.views.widgets.power_bi_reconciliation_widget import PowerBIReconciliationWidget
 
 from src.views.components.drill_down_panel import DrillDownPanel
 from src.views.components.hierarchy_selector import HierarchySelector
 
 
 class AnalyticalDashboard(BaseView):
-    def __init__(self, page, user, on_navigate=None):
-        self.assessment_controller = AssessmentController()
+    def __init__(self, page, user, on_navigate=None, platform_config=None):
+        self.platform_config = platform_config or {}
+        self.feature_flags = self._normalize_feature_flags(self.platform_config.get("featureFlags"))
+        self.power_bi_config = self._resolve_power_bi_config()
+        self.assessment_controller = AssessmentController(user)
         
-        actions = [
+        actions = []
+        if can_import_analytics(user) and self._feature_enabled("analytics_import", True):
+            actions.append(ft.FilledTonalButton("Import Analytics", icon=Icons.UPLOAD_FILE, on_click=self._open_analytics_import_dialog))
+        actions.extend([
             ft.OutlinedButton("Customize Layout", icon=Icons.DASHBOARD_CUSTOMIZE, on_click=self._open_customize_dialog),
             ft.FilledButton("Export Report", icon=Icons.PICTURE_AS_PDF, on_click=self._export_report)
-        ]
+        ])
         
         super().__init__(page, "Analytical Suite", actions=actions)
         self.user = user
@@ -62,7 +79,16 @@ class AnalyticalDashboard(BaseView):
             "control_effectiveness": {"class": ControlEffectivenessWidget, "title": "Control Effectiveness Dashboard", "default": False},
             "heatmap_embed": {"class": HeatmapEmbedWidget, "title": "Embedded Risk Heatmap", "default": True},
             "compliance_scorecard": {"class": ComplianceScorecardWidget, "title": "Compliance Scorecard", "default": False},
+            "management_override": {"class": ManagementOverrideAnalyticsWidget, "title": "Management Override Indicators", "default": False},
+            "journal_exceptions": {"class": JournalExceptionAnalyticsWidget, "title": "Journal Exception Analytics", "default": False},
+            "user_posting_concentration": {"class": UserPostingConcentrationWidget, "title": "User Posting Concentration", "default": False},
+            "tb_movement": {"class": TrialBalanceMovementWidget, "title": "Trial Balance Movement", "default": False},
+            "industry_benchmark": {"class": IndustryBenchmarkWidget, "title": "Industry Benchmark Analytics", "default": False},
+            "reasonability_forecast": {"class": ReasonabilityForecastWidget, "title": "Reasonability and Forecast Analytics", "default": False},
+            "power_bi_reconciliation": {"class": PowerBIReconciliationWidget, "title": "Power BI Reconciliation", "default": False},
         }
+        if not self._feature_enabled("power_bi_reporting", True):
+            self.widget_registry.pop("power_bi_reconciliation", None)
         
         # State: List of active widget IDs
         self.active_widget_ids = [k for k, v in self.widget_registry.items() if v["default"]]
@@ -73,6 +99,15 @@ class AnalyticalDashboard(BaseView):
         self.grid_columns = 12 # Density setting
         self.layout_mode = "grid" # grid, horizontal, vertical, equal, sidebar_left, sidebar_right, featured_top, featured_bottom, quad
         self.favorite_layouts = [] # List of {name, layout_mode, grid_columns, active_ids}
+        self.report_mode = "native"
+        self.power_bi_reconciliation_data = None
+        self.power_bi_reconciliation_loading = False
+        self.power_bi_reconciliation_ref_id = None
+        self.analytics_import_file_picker = None
+        self.pending_analytics_import_file = None
+        self.analytics_import_validation = None
+        self.analytics_import_batches = []
+        self.analytics_import_dialog = None
         
         # Drill down panel (hidden by default)
         self.drill_down_panel = DrillDownPanel(page, on_close=self._close_drill_down, on_navigate=self._handle_panel_navigation)
@@ -82,7 +117,38 @@ class AnalyticalDashboard(BaseView):
         self._build_ui()
         print(f"DEBUG: [AnalyticalDashboard] UI Built. load_data() will be called by view manager.")
 
+    @staticmethod
+    def _normalize_feature_flags(flags):
+        if not isinstance(flags, dict):
+            return {}
+        normalized = {}
+        for key, value in flags.items():
+            normalized_key = "".join(ch if ch.isalnum() else "_" for ch in str(key)).strip("_").lower()
+            normalized[normalized_key] = bool(value)
+        return normalized
+
+    def _feature_enabled(self, flag_name, default=True):
+        return self.feature_flags.get(flag_name, default)
+
+    def _resolve_power_bi_config(self):
+        config = dict(POWER_BI_CONFIG)
+        server_config = self.platform_config.get("powerBI") if isinstance(self.platform_config, dict) else None
+        if isinstance(server_config, dict):
+            config.update({
+                "enabled": server_config.get("enabled", config.get("enabled")),
+                "mode": server_config.get("mode", config.get("mode")),
+                "report_url": server_config.get("reportUrl", config.get("report_url", "")),
+                "workspace_id": server_config.get("workspaceId", config.get("workspace_id", "")),
+                "report_id": server_config.get("reportId", config.get("report_id", "")),
+                "dataset_id": server_config.get("datasetId", config.get("dataset_id", "")),
+            })
+        if not self._feature_enabled("power_bi_reporting", True):
+            config["enabled"] = False
+        return config
+
     def _build_ui(self):
+        self._ensure_analytics_import_picker()
+
         # Assessment Selector
         self.assessment_selector = ft.Dropdown(
             label="Assessment Context",
@@ -102,6 +168,29 @@ class AnalyticalDashboard(BaseView):
             on_click=lambda _: self.load_data()
         )
 
+        self.report_mode_selector = ft.Dropdown(
+            label="Report Mode",
+            value="native",
+            width=180,
+            text_size=12,
+            options=(
+                [
+                    ft.dropdown.Option(key="native", text="Native Dashboard"),
+                    ft.dropdown.Option(key="power_bi", text="Microsoft Power BI"),
+                ] if self._feature_enabled("power_bi_reporting", True) else [
+                    ft.dropdown.Option(key="native", text="Native Dashboard"),
+                ]
+            ),
+            on_change=self._on_report_mode_change
+        )
+
+        self.power_bi_button = ft.FilledTonalButton(
+            "Open Power BI",
+            icon=Icons.OPEN_IN_NEW,
+            visible=False,
+            on_click=self._open_power_bi_report
+        )
+
         # Audit Universe selector
         self.hierarchy_selector = HierarchySelector(
             self.page,
@@ -110,11 +199,12 @@ class AnalyticalDashboard(BaseView):
         
         # Favorites Chips
         self.favorites_row = ft.Row(spacing=10, scroll=ft.ScrollMode.AUTO)
-        
+
         # Main Grid/Column
         self.dashboard_container = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO)
         self.dashboard_grid = ft.ResponsiveRow(run_spacing=20, spacing=20)
         self.dashboard_container.controls = [self.dashboard_grid]
+        self.power_bi_panel = self._build_power_bi_panel()
         
         # Main Layout including drill-down panel as an overlay or side panel
         # Using a Stack to allow drill-down panel to slide in/appear
@@ -126,8 +216,10 @@ class AnalyticalDashboard(BaseView):
                     ], spacing=5, expand=True),
                     ft.Row([
                         self.assessment_selector,
+                        self.report_mode_selector,
                         self.hierarchy_selector,
-                        self.refresh_button
+                        self.refresh_button,
+                        self.power_bi_button
                     ], spacing=8)
                 ], alignment=ft.MainAxisAlignment.END, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Container(content=self.dashboard_container, padding=ft.padding.only(bottom=50), expand=True)
@@ -221,6 +313,12 @@ class AnalyticalDashboard(BaseView):
         self._refresh_dashboard()
 
     def _refresh_dashboard(self):
+        if self.report_mode == "power_bi":
+            self.dashboard_container.controls = [self.power_bi_panel]
+            self._sync_power_bi_ui()
+            self.page.update()
+            return
+
         self.dashboard_grid.controls.clear()
         self.dashboard_container.controls = [self.dashboard_grid]
         self.active_instances = {}
@@ -351,6 +449,712 @@ class AnalyticalDashboard(BaseView):
         self.page.update()
         for widget in instances:
             widget.load_data()
+
+    def _sync_power_bi_ui(self):
+        enabled = bool(self.power_bi_config.get("enabled")) and bool(self._build_power_bi_url())
+        self.power_bi_button.visible = self.report_mode == "power_bi" and enabled
+
+        if enabled:
+            status = "Power BI is available for this Analytical Report."
+            detail = "Use the button to open the Microsoft Power BI report with the current analytical context."
+            badge_text = "Configured"
+            badge_color = ft.Colors.GREEN_100
+        else:
+            status = "Power BI is not configured yet."
+            detail = "Set the auditing API `PowerBI` environment configuration and refresh the client."
+            badge_text = "Not Configured"
+            badge_color = ft.Colors.ORANGE_100
+
+        self.power_bi_status_text.value = status
+        self.power_bi_detail_text.value = detail
+        self.power_bi_url_text.value = self._build_power_bi_url() or "No Power BI report URL configured"
+        self.power_bi_context_text.value = (
+            f"Reference ID: {self.selected_ref_id} | Audit Universe ID: {self.selected_audit_universe_id or 'not selected'}"
+            if self.selected_ref_id else "Reference ID: not selected"
+        )
+        self.power_bi_badge.content.value = badge_text
+        self.power_bi_badge.bgcolor = badge_color
+        self._update_power_bi_reconciliation_ui()
+
+        if (
+            self.selected_ref_id
+            and self.selected_ref_id != self.power_bi_reconciliation_ref_id
+            and not self.power_bi_reconciliation_loading
+        ):
+            self.power_bi_reconciliation_loading = True
+            self.page.run_task(self._load_power_bi_reconciliation_async)
+
+        if self.page:
+            self.page.update()
+
+    def _build_power_bi_panel(self):
+        self.power_bi_status_text = ft.Text(
+            "Power BI is not configured yet.",
+            size=18,
+            weight=ft.FontWeight.W_600
+        )
+        self.power_bi_detail_text = ft.Text(
+            "Set the auditing API `PowerBI` environment configuration to enable Microsoft Power BI for analytical reporting.",
+            size=13,
+            color=ft.Colors.GREY_700
+        )
+        self.power_bi_url_text = ft.Text(
+            "No Power BI report URL configured",
+            size=12,
+            selectable=True,
+            color=self.colors.primary
+        )
+        self.power_bi_context_text = ft.Text(
+            "Reference ID: not selected",
+            size=12
+        )
+        self.power_bi_badge = ft.Container(
+            content=ft.Text("Not Configured", size=11, weight=ft.FontWeight.W_600),
+            bgcolor=ft.Colors.ORANGE_100,
+            border_radius=999,
+            padding=ft.padding.symmetric(horizontal=10, vertical=6)
+        )
+        self.power_bi_reconciliation_section = ft.Container(
+            content=ft.Column([
+                ft.Text("Reporting Reconciliation", size=12, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    "Select an assessment to compare native analytics with reporting-layer values.",
+                    size=12,
+                    color=ft.Colors.GREY_700
+                )
+            ], spacing=8),
+            bgcolor=ft.Colors.SURFACE,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=10,
+            padding=12
+        )
+
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(Icons.ANALYTICS, size=24, color=self.colors.primary),
+                    ft.Text("Microsoft Power BI", size=22, weight=ft.FontWeight.W_700),
+                    self.power_bi_badge
+                ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                self.power_bi_status_text,
+                self.power_bi_detail_text,
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Assessment Context", size=12, weight=ft.FontWeight.W_600),
+                        self.power_bi_context_text
+                    ], spacing=4),
+                    bgcolor=self.colors.hover_bg,
+                    border_radius=10,
+                    padding=12
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Power BI URL", size=12, weight=ft.FontWeight.W_600),
+                        self.power_bi_url_text
+                    ], spacing=6),
+                    bgcolor=ft.Colors.SURFACE,
+                    border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=10,
+                    padding=12
+                ),
+                self.power_bi_reconciliation_section,
+                ft.Row([
+                    ft.FilledButton("Open Microsoft Power BI", icon=Icons.OPEN_IN_BROWSER, on_click=self._open_power_bi_report),
+                    ft.OutlinedButton("Use Native Dashboard", icon=Icons.DASHBOARD, on_click=lambda _: self._set_report_mode("native"))
+                ], spacing=10),
+                ft.Text(
+                    "Current implementation opens the Power BI report in the browser. The native widget dashboard remains available in this view.",
+                    size=12,
+                    color=ft.Colors.GREY_700
+                )
+            ], spacing=16),
+            padding=20,
+            border_radius=16,
+            bgcolor=ft.Colors.WHITE,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT)
+        )
+
+    async def _load_power_bi_reconciliation_async(self):
+        reference_id = self.selected_ref_id
+        if not reference_id:
+            self.power_bi_reconciliation_loading = False
+            self._update_power_bi_reconciliation_ui()
+            return
+
+        try:
+            data = await self.assessment_controller.auditing_client.get_power_bi_reconciliation(reference_id)
+            if reference_id != self.selected_ref_id:
+                return
+            self.power_bi_reconciliation_data = data
+            self.power_bi_reconciliation_ref_id = reference_id
+        except Exception as e:
+            if reference_id != self.selected_ref_id:
+                return
+            self.power_bi_reconciliation_data = {"error": str(e)}
+            self.power_bi_reconciliation_ref_id = reference_id
+        finally:
+            if reference_id == self.selected_ref_id:
+                self.power_bi_reconciliation_loading = False
+                self._update_power_bi_reconciliation_ui()
+
+    def _update_power_bi_reconciliation_ui(self):
+        if not hasattr(self, "power_bi_reconciliation_section"):
+            return
+
+        if not self.selected_ref_id:
+            self.power_bi_reconciliation_section.content = ft.Column([
+                ft.Text("Reporting Reconciliation", size=12, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    "Select an assessment to compare native analytics with reporting-layer values.",
+                    size=12,
+                    color=ft.Colors.GREY_700
+                )
+            ], spacing=8)
+            if self.page:
+                self.page.update()
+            return
+
+        if self.power_bi_reconciliation_loading:
+            self.power_bi_reconciliation_section.content = ft.Column([
+                ft.Text("Reporting Reconciliation", size=12, weight=ft.FontWeight.W_600),
+                ft.Row([
+                    ft.ProgressRing(width=16, height=16, stroke_width=2),
+                    ft.Text("Checking reporting data mart alignment...", size=12)
+                ], spacing=10)
+            ], spacing=8)
+            if self.page:
+                self.page.update()
+            return
+
+        data = self.power_bi_reconciliation_data or {}
+        error_message = data.get("error") if isinstance(data, dict) else None
+        if error_message:
+            self.power_bi_reconciliation_section.content = ft.Column([
+                ft.Text("Reporting Reconciliation", size=12, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    f"Reconciliation failed: {error_message}",
+                    size=12,
+                    color=ft.Colors.RED_700
+                )
+            ], spacing=8)
+            if self.page:
+                self.page.update()
+            return
+
+        metrics = data.get("metrics", []) if isinstance(data, dict) else []
+        matched = data.get("matchedMetrics", 0) if isinstance(data, dict) else 0
+        mismatched = data.get("mismatchedMetrics", 0) if isinstance(data, dict) else 0
+        data_mart_status = data.get("dataMartStatus", "Unknown") if isinstance(data, dict) else "Unknown"
+        generated_at = data.get("generatedAt", "") if isinstance(data, dict) else ""
+
+        if not metrics:
+            self.power_bi_reconciliation_section.content = ft.Column([
+                ft.Text("Reporting Reconciliation", size=12, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    "No reconciliation metrics are available yet. Apply the reporting data mart views and refresh the assessment.",
+                    size=12,
+                    color=ft.Colors.GREY_700
+                )
+            ], spacing=8)
+            if self.page:
+                self.page.update()
+            return
+
+        summary_cards = ft.Row([
+            self._build_power_bi_summary_card("Status", data_mart_status, ft.Colors.BLUE_700),
+            self._build_power_bi_summary_card("Matched", matched, ft.Colors.GREEN_700),
+            self._build_power_bi_summary_card("Mismatched", mismatched, ft.Colors.RED_700 if mismatched else ft.Colors.GREEN_700),
+            self._build_power_bi_summary_card("Metrics", len(metrics), ft.Colors.BLUE_GREY_700),
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
+        sorted_metrics = sorted(
+            metrics,
+            key=lambda metric: (metric.get("isMatched", True), metric.get("category", ""), metric.get("metricName", ""))
+        )
+        metric_rows = []
+        for metric in sorted_metrics[:6]:
+            matched_flag = bool(metric.get("isMatched", False))
+            metric_rows.append(
+                ft.Container(
+                    padding=10,
+                    bgcolor=ft.Colors.WHITE,
+                    border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=8,
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text(metric.get("metricName", "Metric"), size=12, weight=ft.FontWeight.W_600),
+                            ft.Container(expand=True),
+                            ft.Container(
+                                content=ft.Text("Matched" if matched_flag else "Mismatch", size=10, color=ft.Colors.WHITE),
+                                bgcolor=ft.Colors.GREEN_700 if matched_flag else ft.Colors.RED_700,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                                border_radius=999
+                            )
+                        ]),
+                        ft.Text(
+                            f"{metric.get('category', 'Reporting')} | Native {self._format_power_bi_metric(metric.get('nativeValue'))} | "
+                            f"Reporting {self._format_power_bi_metric(metric.get('reportingValue'))}",
+                            size=11,
+                            color=ft.Colors.GREY_700
+                        ),
+                        ft.Text(
+                            f"Variance {self._format_power_bi_metric(metric.get('variance'))}",
+                            size=11,
+                            color=ft.Colors.RED_700 if not matched_flag else ft.Colors.GREEN_700
+                        )
+                    ], spacing=4)
+                )
+            )
+
+        footer_text = "All sampled metrics match the reporting layer." if mismatched == 0 else "Review mismatched metrics before relying on Power BI output."
+        if generated_at:
+            footer_text = f"{footer_text} Generated at {generated_at}."
+
+        self.power_bi_reconciliation_section.content = ft.Column([
+            ft.Text("Reporting Reconciliation", size=12, weight=ft.FontWeight.W_600),
+            summary_cards,
+            ft.Column(metric_rows, spacing=8),
+            ft.Text(footer_text, size=11, color=ft.Colors.GREY_700),
+        ], spacing=10)
+        if self.page:
+            self.page.update()
+
+    def _build_power_bi_summary_card(self, label, value, color):
+        return ft.Container(
+            width=150,
+            padding=12,
+            bgcolor=ft.Colors.WHITE,
+            border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=10,
+            content=ft.Column([
+                ft.Text(label, size=11, color=ft.Colors.GREY_700),
+                ft.Text(str(value), size=20, weight=ft.FontWeight.W_700, color=color),
+            ], spacing=4)
+        )
+
+    @staticmethod
+    def _format_power_bi_metric(value):
+        try:
+            numeric = float(value or 0)
+            return f"{numeric:,.0f}" if numeric.is_integer() else f"{numeric:,.2f}"
+        except (TypeError, ValueError):
+            return str(value or 0)
+
+    def _ensure_analytics_import_picker(self):
+        if self.analytics_import_file_picker:
+            return
+        self.analytics_import_file_picker = ft.FilePicker(on_result=self._on_analytics_import_file_selected)
+        self.page.overlay.append(self.analytics_import_file_picker)
+
+    def _open_analytics_import_dialog(self, e=None):
+        if not self._feature_enabled("analytics_import", True):
+            self._show_message("Analytics import is disabled in this environment.", error=True)
+            return
+        if not can_import_analytics(self.user):
+            self._show_message("You do not have permission to import analytics data.", error=True)
+            return
+        self._ensure_analytics_import_picker()
+
+        self.analytics_dataset_dropdown = ft.Dropdown(
+            label="Dataset Type",
+            value="journal_entries",
+            options=[
+                ft.dropdown.Option(key="journal_entries", text="Journal Entries"),
+                ft.dropdown.Option(key="trial_balance", text="Trial Balance"),
+                ft.dropdown.Option(key="industry_benchmarks", text="Industry Benchmarks"),
+                ft.dropdown.Option(key="reasonability_forecasts", text="Reasonability Forecasts"),
+            ],
+            on_change=self._on_analytics_dataset_change
+        )
+        self.analytics_source_system_field = ft.TextField(label="Source System", hint_text="SAP, Oracle, Dynamics, Sage, Xero, CSV export")
+        self.analytics_batch_name_field = ft.TextField(label="Batch Name", hint_text="Optional import batch label")
+        self.analytics_notes_field = ft.TextField(label="Notes", multiline=True, min_lines=2, max_lines=4)
+        self.analytics_reference_text = ft.Text(
+            f"Assessment Reference: {self.selected_ref_id}" if self.selected_ref_id else "Assessment Reference: not selected (import will remain unscoped)",
+            size=12,
+            color=self.colors.text_secondary
+        )
+        self.analytics_selected_file_text = ft.Text("No CSV file selected", size=12, color=self.colors.text_secondary)
+        self.analytics_validation_text = ft.Text(
+            "Choose a dataset type and select a CSV file to validate required columns.",
+            size=12,
+            color=self.colors.text_secondary
+        )
+        self.analytics_preview_column = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, height=180)
+        self.analytics_batches_column = ft.Column(
+            controls=[ft.Text("Loading recent import batches...", size=12, color=self.colors.text_secondary)],
+            spacing=6,
+            scroll=ft.ScrollMode.AUTO,
+            height=160
+        )
+        self.analytics_import_button = ft.FilledButton("Import CSV", icon=Icons.CLOUD_UPLOAD, on_click=self._submit_analytics_import)
+        self.analytics_import_button.disabled = True
+
+        self.analytics_import_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Import Analytics Data"),
+            content=ft.Container(
+                width=760,
+                content=ft.Column([
+                    self.analytics_reference_text,
+                    ft.Row([
+                        self.analytics_dataset_dropdown,
+                        self.analytics_source_system_field,
+                    ], spacing=12),
+                    ft.Row([
+                        self.analytics_batch_name_field,
+                        ft.OutlinedButton("Select CSV", icon=Icons.UPLOAD_FILE, on_click=self._pick_analytics_import_file),
+                    ], spacing=12),
+                    self.analytics_selected_file_text,
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("Validation", size=12, weight=ft.FontWeight.W_600),
+                            self.analytics_validation_text
+                        ], spacing=6),
+                        bgcolor=self.colors.hover_bg,
+                        border_radius=10,
+                        padding=12
+                    ),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("Preview", size=12, weight=ft.FontWeight.W_600),
+                            self.analytics_preview_column
+                        ], spacing=8),
+                        bgcolor=ft.Colors.SURFACE,
+                        border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                        border_radius=10,
+                        padding=12
+                    ),
+                    self.analytics_notes_field,
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("Recent Import Batches", size=12, weight=ft.FontWeight.W_600),
+                            self.analytics_batches_column
+                        ], spacing=8),
+                        bgcolor=ft.Colors.SURFACE,
+                        border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                        border_radius=10,
+                        padding=12
+                    ),
+                ], spacing=14, scroll=ft.ScrollMode.AUTO),
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda _: self._close_analytics_import_dialog()),
+                self.analytics_import_button,
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.dialog = self.analytics_import_dialog
+        self.analytics_import_dialog.open = True
+        self.page.update()
+        self.page.run_task(self._load_analytics_import_batches_async)
+
+    def _close_analytics_import_dialog(self):
+        if self.analytics_import_dialog:
+            self.analytics_import_dialog.open = False
+        if self.page:
+            self.page.update()
+
+    def _pick_analytics_import_file(self, e=None):
+        self._ensure_analytics_import_picker()
+        self.analytics_import_file_picker.pick_files(
+            allow_multiple=False,
+            dialog_title="Select analytics CSV file",
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["csv"]
+        )
+
+    def _on_analytics_import_file_selected(self, e):
+        if not e or not getattr(e, "files", None):
+            return
+
+        selected = e.files[0]
+        self.pending_analytics_import_file = {
+            "path": getattr(selected, "path", None),
+            "name": getattr(selected, "name", None),
+            "size": getattr(selected, "size", None),
+        }
+        if not self.pending_analytics_import_file.get("path"):
+            self._show_message("Selected file path is not available in this runtime", error=True)
+            return
+
+        if hasattr(self, "analytics_selected_file_text"):
+            file_name = self.pending_analytics_import_file.get("name") or os.path.basename(self.pending_analytics_import_file["path"])
+            file_size = self.pending_analytics_import_file.get("size")
+            size_text = f" ({file_size:,} bytes)" if isinstance(file_size, int) else ""
+            self.analytics_selected_file_text.value = f"Selected file: {file_name}{size_text}"
+            self._revalidate_selected_analytics_file()
+            self.page.update()
+
+    def _on_analytics_dataset_change(self, e=None):
+        self._revalidate_selected_analytics_file()
+        if self.page:
+            self.page.run_task(self._load_analytics_import_batches_async)
+
+    def _revalidate_selected_analytics_file(self):
+        if not self.pending_analytics_import_file or not self.pending_analytics_import_file.get("path"):
+            if hasattr(self, "analytics_validation_text"):
+                self.analytics_validation_text.value = "Choose a dataset type and select a CSV file to validate required columns."
+                self.analytics_import_button.disabled = True
+                self.analytics_preview_column.controls = [ft.Text("No preview available", size=12, color=self.colors.text_secondary)]
+                self.page.update()
+            return
+
+        dataset_type = self.analytics_dataset_dropdown.value or "journal_entries"
+        validation = self._validate_analytics_csv_file(self.pending_analytics_import_file["path"], dataset_type)
+        self.analytics_import_validation = validation
+        self.analytics_import_button.disabled = not validation.get("is_valid", False)
+
+        if validation.get("is_valid"):
+            self.analytics_validation_text.value = (
+                f"Validated {validation.get('row_count', 0):,} rows. "
+                f"Required columns present for {dataset_type.replace('_', ' ')}."
+            )
+            self.analytics_validation_text.color = ft.Colors.GREEN_700
+        else:
+            error = validation.get("error") or "Validation failed."
+            self.analytics_validation_text.value = error
+            self.analytics_validation_text.color = ft.Colors.RED_700
+
+        preview_rows = validation.get("preview_rows", [])
+        if preview_rows:
+            self.analytics_preview_column.controls = [
+                ft.Container(
+                    padding=8,
+                    bgcolor=ft.Colors.WHITE,
+                    border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=8,
+                    content=ft.Column([
+                        ft.Text(f"Sample Row {index + 1}", size=11, weight=ft.FontWeight.W_600),
+                        ft.Text(
+                            " | ".join(f"{key}: {value}" for key, value in row.items()),
+                            size=11,
+                            color=self.colors.text_secondary
+                        )
+                    ], spacing=4)
+                )
+                for index, row in enumerate(preview_rows)
+            ]
+        else:
+            self.analytics_preview_column.controls = [ft.Text("No preview available", size=12, color=self.colors.text_secondary)]
+
+        self.page.update()
+
+    def _validate_analytics_csv_file(self, file_path, dataset_type):
+        required_columns = {
+            "journal_entries": ["fiscal_year", "posting_date", "journal_number"],
+            "trial_balance": ["fiscal_year", "account_number", "current_balance"],
+            "industry_benchmarks": ["fiscal_year", "metric_name", "company_value", "benchmark_median"],
+            "reasonability_forecasts": ["fiscal_year", "metric_name", "actual_value", "expected_value"],
+        }.get(dataset_type, [])
+
+        try:
+            with open(file_path, "r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                headers = [self._normalize_import_header(header) for header in (reader.fieldnames or [])]
+                missing = [column for column in required_columns if column not in headers]
+
+                row_count = 0
+                preview_rows = []
+                for raw_row in reader:
+                    row_count += 1
+                    if len(preview_rows) < 5:
+                        preview_rows.append({
+                            self._normalize_import_header(key): (value or "").strip()
+                            for key, value in raw_row.items()
+                            if key
+                        })
+
+                if not headers:
+                    return {"is_valid": False, "error": "The selected CSV file does not contain headers."}
+                if row_count == 0:
+                    return {"is_valid": False, "error": "The selected CSV file does not contain data rows."}
+                if missing:
+                    return {"is_valid": False, "error": f"Missing required columns: {', '.join(missing)}", "preview_rows": preview_rows}
+
+                return {
+                    "is_valid": True,
+                    "row_count": row_count,
+                    "headers": headers,
+                    "preview_rows": preview_rows,
+                }
+        except UnicodeDecodeError:
+            return {"is_valid": False, "error": "Unable to read CSV file. Save the file as UTF-8 and try again."}
+        except Exception as ex:
+            return {"is_valid": False, "error": str(ex)}
+
+    @staticmethod
+    def _normalize_import_header(value):
+        if not value:
+            return ""
+        normalized = "".join(ch if ch.isalnum() else "_" for ch in value.strip().lower())
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return normalized.strip("_")
+
+    async def _load_analytics_import_batches_async(self):
+        try:
+            dataset_type = self.analytics_dataset_dropdown.value if hasattr(self, "analytics_dataset_dropdown") else None
+            batches = await self.assessment_controller.auditing_client.get_analytics_import_batches(
+                reference_id=self.selected_ref_id,
+                dataset_type=dataset_type,
+                limit=8
+            )
+            self.analytics_import_batches = batches or []
+        except Exception as ex:
+            self.analytics_import_batches = [{"error": str(ex)}]
+
+        self._refresh_analytics_import_batches_ui()
+
+    def _refresh_analytics_import_batches_ui(self):
+        if not hasattr(self, "analytics_batches_column"):
+            return
+
+        if self.analytics_import_batches and isinstance(self.analytics_import_batches[0], dict) and self.analytics_import_batches[0].get("error"):
+            self.analytics_batches_column.controls = [
+                ft.Text(f"Failed to load import batches: {self.analytics_import_batches[0]['error']}", size=12, color=ft.Colors.RED_700)
+            ]
+        elif not self.analytics_import_batches:
+            self.analytics_batches_column.controls = [
+                ft.Text("No import batches recorded yet for this context.", size=12, color=self.colors.text_secondary)
+            ]
+        else:
+            controls = []
+            for batch in self.analytics_import_batches:
+                imported_at = (batch.get("importedAt") or "").replace("T", " ")[:16]
+                controls.append(
+                    ft.Container(
+                        padding=8,
+                        bgcolor=ft.Colors.WHITE,
+                        border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                        border_radius=8,
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text((batch.get("batchName") or batch.get("sourceFileName") or "Import Batch"), size=12, weight=ft.FontWeight.W_600),
+                                ft.Container(expand=True),
+                                ft.Text(f"{batch.get('rowCount', 0):,} rows", size=11, color=self.colors.primary)
+                            ]),
+                            ft.Text(
+                                f"{(batch.get('datasetType') or '').replace('_', ' ')} | {batch.get('sourceSystem') or 'Source not set'} | {imported_at or 'Unknown time'}",
+                                size=11,
+                                color=self.colors.text_secondary
+                            )
+                        ], spacing=4)
+                    )
+                )
+            self.analytics_batches_column.controls = controls
+
+        if self.page:
+            self.page.update()
+
+    def _submit_analytics_import(self, e=None):
+        self.page.run_task(self._submit_analytics_import_async)
+
+    async def _submit_analytics_import_async(self):
+        if not self.pending_analytics_import_file or not self.pending_analytics_import_file.get("path"):
+            self._show_message("Select a CSV file before importing.", error=True)
+            return
+
+        if not self.analytics_import_validation or not self.analytics_import_validation.get("is_valid"):
+            self._show_message("Fix the CSV validation issues before importing.", error=True)
+            return
+
+        import_data = {
+            "referenceId": self.selected_ref_id,
+            "datasetType": self.analytics_dataset_dropdown.value or "journal_entries",
+            "batchName": self.analytics_batch_name_field.value.strip() if self.analytics_batch_name_field.value else None,
+            "sourceSystem": self.analytics_source_system_field.value.strip() if self.analytics_source_system_field.value else None,
+            "importedByUserId": self.user.get("id") if isinstance(self.user, dict) else None,
+            "importedByName": self.user.get("name") if isinstance(self.user, dict) else None,
+            "notes": self.analytics_notes_field.value.strip() if self.analytics_notes_field.value else None,
+        }
+
+        self.analytics_import_button.disabled = True
+        self.analytics_import_button.text = "Importing..."
+        self.page.update()
+
+        try:
+            await self._record_usage_event("analytics", "analytics_import", "import_started", {
+                "datasetType": import_data.get("datasetType"),
+                "referenceId": import_data.get("referenceId")
+            })
+            result = await self.assessment_controller.auditing_client.upload_audit_analytics_file(
+                self.pending_analytics_import_file["path"],
+                import_data
+            )
+            await self._record_usage_event("analytics", "analytics_import", "import_completed", {
+                "datasetType": result.get("datasetType"),
+                "referenceId": result.get("referenceId"),
+                "rowCount": result.get("rowCount", 0)
+            })
+            self._show_message(
+                f"Imported {result.get('rowCount', 0):,} rows into {result.get('datasetType', 'analytics staging')}."
+            )
+            await self._load_analytics_import_batches_async()
+            self._close_analytics_import_dialog()
+            self._refresh_dashboard()
+        except Exception as ex:
+            await self._record_usage_event("analytics", "analytics_import", "import_failed", {
+                "datasetType": import_data.get("datasetType"),
+                "referenceId": import_data.get("referenceId"),
+                "error": str(ex)
+            })
+            self._show_message(f"Analytics import failed: {str(ex)}", error=True)
+            self.analytics_import_button.disabled = False
+            self.analytics_import_button.text = "Import CSV"
+            self.page.update()
+
+    def _build_power_bi_url(self):
+        template = self.power_bi_config.get("report_url", "")
+        if not template:
+            return ""
+
+        try:
+            return template.format(
+                referenceId=self.selected_ref_id or "",
+                auditUniverseId=self.selected_audit_universe_id or ""
+            )
+        except Exception as e:
+            print(f"Error building Power BI URL: {e}")
+            return template
+
+    def _open_power_bi_report(self, e):
+        url = self._build_power_bi_url()
+        if not self.power_bi_config.get("enabled") or not url:
+            self.page.show_snack_bar(
+                ft.SnackBar(content=ft.Text("Microsoft Power BI is not configured for this environment."))
+            )
+            return
+
+        self.page.run_task(self._record_usage_event, "analytics", "power_bi", "open_report", {
+            "referenceId": self.selected_ref_id,
+            "auditUniverseId": self.selected_audit_universe_id,
+            "urlConfigured": bool(url)
+        })
+        self.page.launch_url(url)
+
+    def _set_report_mode(self, mode):
+        self.report_mode = mode
+        self.report_mode_selector.value = mode
+        self._refresh_dashboard()
+
+    def _on_report_mode_change(self, e):
+        self.report_mode = self.report_mode_selector.value or "native"
+        self._refresh_dashboard()
+
+    async def _record_usage_event(self, module_name, feature_name, event_name, metadata=None):
+        try:
+            await self.assessment_controller.auditing_client.record_usage_event({
+                "moduleName": module_name,
+                "featureName": feature_name,
+                "eventName": event_name,
+                "referenceId": self.selected_ref_id,
+                "source": "analytical-dashboard",
+                "metadataJson": json.dumps(metadata or {})
+            })
+        except Exception as ex:
+            print(f"Failed to record analytical usage event: {ex}")
 
     def _handle_maximize(self, widget):
         # Instantiate with correct params based on class
@@ -586,14 +1390,6 @@ class AnalyticalDashboard(BaseView):
     def _handle_panel_navigation(self, destination, context):
         """Handle navigation requests from the drill-down panel"""
         if self.on_navigate:
-            dest_map = {
-                "risks": "assessments",
-                "findings": "assessments",
-                "controls": "assessments",
-                "gaps": "assessments",
-                "audits": "audit_universe",
-            }
-            target = dest_map.get(destination, destination)
             params = context if isinstance(context, dict) else {}
             # Ensure selected context is included
             if isinstance(params, dict):
@@ -601,7 +1397,27 @@ class AnalyticalDashboard(BaseView):
                     params["reference_id"] = self.selected_ref_id
                 if self.selected_audit_universe_id is not None and "audit_universe_id" not in params and "auditUniverseId" not in params:
                     params["audit_universe_id"] = self.selected_audit_universe_id
-            self.on_navigate(target, None, params)
+            if destination == "findings":
+                params["initial_tab"] = 8
+                self.on_navigate("assessments", "details", params)
+            elif destination == "risks":
+                params["initial_tab"] = 2
+                self.on_navigate("assessments", "details", params)
+            elif destination in {"controls", "gaps"}:
+                params["initial_tab"] = 3
+                self.on_navigate("assessments", "details", params)
+            elif destination == "audits":
+                self.on_navigate("audit_universe", None, params)
+            else:
+                self.on_navigate(destination, None, params)
+
+    def _show_message(self, message, error=False):
+        self.page.show_snack_bar(
+            ft.SnackBar(
+                content=ft.Text(message),
+                bgcolor=ft.Colors.RED_700 if error else ft.Colors.GREEN_700
+            )
+        )
 
     def _export_report(self, e):
         # Identify checked widgets
@@ -631,8 +1447,9 @@ class AnalyticalDashboard(BaseView):
         if self.assessment_selector.value:
             try:
                 self.selected_ref_id = int(self.assessment_selector.value)
+                self.power_bi_reconciliation_data = None
+                self.power_bi_reconciliation_ref_id = None
                 print(f"DEBUG: [AnalyticalDashboard] Selected Ref ID: {self.selected_ref_id}")
-
                 self._refresh_dashboard()
             except ValueError:
                 print(f"DEBUG: [AnalyticalDashboard] ERROR: Invalid selected_ref_id: {self.assessment_selector.value}")

@@ -25,8 +25,10 @@ class AssessmentListView(BaseView):
         self.search_value = (self.active_filter.get("search") or "").lower()
         self.current_risk_filter = self.active_filter.get("risk_level") or "All Levels"
         self.current_dept_filter = self.active_filter.get("department") or "All Departments"
+        self.current_project_filter = self.active_filter.get("project") or "All Projects"
         self.reference_filter_id = self.active_filter.get("reference_id") or self.reference_id
         self.department_filter_id = self.active_filter.get("department_id")
+        self.project_filter_id = self.active_filter.get("project_id")
         # Resizable panel flex values
         self.left_flex = getattr(self, "left_flex", 1)
         self.center_flex = getattr(self, "center_flex", 3)
@@ -41,7 +43,7 @@ class AssessmentListView(BaseView):
         # Initialize BaseView header
         colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
         actions = [create_modern_button(colors, "+ Create", icon=Icons.ADD, on_click=self.create_assessment, style="success", width=140)]
-        super().__init__(page, "Risk Assessments", on_search=self.on_search_change, actions=actions, colors=colors)
+        super().__init__(page, "Audit Files", on_search=self.on_search_change, actions=actions, colors=colors)
 
         # Initialize the view
         self.build()
@@ -113,7 +115,7 @@ class AssessmentListView(BaseView):
             animation_duration=300,
             tabs=[
                 ft.Tab(
-                    text="Standard Assessments",
+                    text="Audit Files",
                     icon=Icons.ASSIGNMENT,
                     content=ft.Container(
                         content=self.standard_content,
@@ -244,6 +246,14 @@ class AssessmentListView(BaseView):
         if department_name:
             normalized["department"] = department_name
 
+        project_id = flt.get("project_id") or flt.get("projectId")
+        if project_id is not None:
+            normalized["project_id"] = project_id
+
+        project_name = flt.get("project") or flt.get("projectName")
+        if project_name:
+            normalized["project"] = project_name
+
         search = flt.get("search") or flt.get("query")
         if search:
             normalized["search"] = search
@@ -254,6 +264,19 @@ class AssessmentListView(BaseView):
         """Refresh the assessments table based on current filters and search"""
         filtered_assessments = self.assessments
         table_colors = get_theme_colors(self.page.theme_mode if hasattr(self.page, "theme_mode") else ft.ThemeMode.LIGHT)
+        column_widths = {
+            "id": 90,
+            "title": 260,
+            "department": 130,
+            "project": 220,
+            "audit_type": 150,
+            "date": 110,
+            "risk": 130,
+            "score": 70,
+            "actions": 220,
+        }
+        row_spacing = 12
+        table_width = sum(column_widths.values()) + (row_spacing * 8) + 48
 
         # Apply reference filter if provided
         if self.reference_filter_id:
@@ -269,12 +292,19 @@ class AssessmentListView(BaseView):
                 if str(assessment.department_id) == str(self.department_filter_id)
             ]
 
+        if self.project_filter_id:
+            filtered_assessments = [
+                assessment for assessment in filtered_assessments
+                if str(getattr(assessment, "project_id", None)) == str(self.project_filter_id)
+            ]
+
         # Apply search filter
         if self.search_value:
             filtered_assessments = [assessment for assessment in filtered_assessments
                                     if (self.search_value in assessment.title.lower() or
                                         (
                                                     assessment.department and self.search_value in assessment.department.lower()) or
+                                        (assessment.project and self.search_value in assessment.project.lower()) or
                                         (assessment.findings and self.search_value in assessment.findings.lower()))]
 
         # Apply risk level filter
@@ -287,23 +317,46 @@ class AssessmentListView(BaseView):
             filtered_assessments = [assessment for assessment in filtered_assessments
                                     if assessment.department == self.current_dept_filter]
 
+        def sort_key(assessment):
+            reference_id = getattr(assessment, "reference_id", None)
+            updated_at = getattr(assessment, "updated_at", None)
+            try:
+                reference_rank = int(reference_id) if reference_id is not None else -1
+            except (TypeError, ValueError):
+                reference_rank = -1
+            return (
+                reference_rank,
+                updated_at or datetime.min,
+            )
+
+        filtered_assessments = sorted(filtered_assessments, key=sort_key, reverse=True)
+
         # Create table header using surface color with responsive column widths
+        column_widths = {
+            "id": 80,
+            "audit_file": 460,
+            "audit_type": 160,
+            "date": 110,
+            "risk": 130,
+            "actions": 130,
+        }
+        row_spacing = 10
+        table_width = sum(column_widths.values()) + (row_spacing * 5) + 48
+
         header = ft.Container(
+            width=table_width,
             height=44,
             bgcolor=table_colors.surface,
             border=ft.border.only(bottom=ft.BorderSide(1, table_colors.border)),
             padding=ft.padding.only(left=24, right=24),
             content=ft.Row([
-                ft.Container(expand=1, content=ft.Text("ID", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=2, content=ft.Text("Title", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=1.5, content=ft.Text("Department", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=1.5, content=ft.Text("Project", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=1, content=ft.Text("Date", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=1, content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=0.8, content=ft.Text("Score", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
-                ft.Container(expand=2, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary,
-                                                        text_align=ft.TextAlign.CENTER))
-            ], expand=True)
+                ft.Container(width=column_widths["id"], content=ft.Text("ID", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(width=column_widths["audit_file"], content=ft.Text("Audit File", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(width=column_widths["audit_type"], content=ft.Text("Audit Type", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(width=column_widths["date"], content=ft.Text("Date", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(width=column_widths["risk"], content=ft.Text("Risk Level", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary)),
+                ft.Container(width=column_widths["actions"], alignment=ft.alignment.center, content=ft.Text("Actions", weight=ft.FontWeight.BOLD, color=table_colors.text_secondary, text_align=ft.TextAlign.CENTER))
+            ], spacing=row_spacing)
         )
 
         # Create assessment rows
@@ -314,6 +367,7 @@ class AssessmentListView(BaseView):
         # Empty state if no assessments
         if not filtered_assessments:
             empty_state = ft.Container(
+                width=table_width,
                 height=100,
                 alignment=ft.alignment.center,
                 content=ft.Column([
@@ -330,10 +384,18 @@ class AssessmentListView(BaseView):
             rows_column.controls.append(empty_state)
 
         # Use a Column with auto scroll on outer container for simpler updates
-        table = ft.Column([
-            header,
-            rows_column
-        ], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
+        table = ft.Row(
+            [
+                ft.Container(
+                    width=table_width,
+                    content=ft.Column([
+                        header,
+                        rows_column
+                    ], spacing=0)
+                )
+            ],
+            scroll=ft.ScrollMode.HIDDEN,
+        )
 
         # Wrap table in a responsive container
         responsive_table = ft.Container(
@@ -421,57 +483,107 @@ class AssessmentListView(BaseView):
         else:
             assessment_date = "N/A"
 
+        engagement_type_name = getattr(assessment, "engagement_type_name", None) or "Not Set"
+        normalized_type = engagement_type_name.lower()
+        if "internal" in normalized_type:
+            engagement_chip_color = "#0f766e"
+        elif "external" in normalized_type:
+            engagement_chip_color = "#2563eb"
+        else:
+            engagement_chip_color = "#64748b"
+
+        column_widths = {
+            "id": 80,
+            "audit_file": 460,
+            "audit_type": 160,
+            "date": 110,
+            "risk": 130,
+            "actions": 130,
+        }
+        row_spacing = 10
+        table_width = sum(column_widths.values()) + (row_spacing * 5) + 48
+
+        context_text = assessment.department if assessment.department else "-"
+        if assessment.project and assessment.project != "-":
+            context_text = f"{context_text} | {assessment.project}" if context_text and context_text != "-" else assessment.project
+
+        score_text = f"{assessment.risk_score:.1f}" if assessment.risk_score is not None else None
+
         return ft.Container(
-            height=60,
+            width=table_width,
+            height=74,
             bgcolor=row_bgcolor,
             border=ft.border.only(bottom=ft.BorderSide(1, row_colors.border)),
             padding=ft.padding.only(left=30, right=30),
             content=ft.Row([
-                ft.Container(expand=1, content=ft.Text(assessment.id, color=row_colors.text_primary)),
-                ft.Container(expand=2, content=ft.Text(assessment.title, color=row_colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
-                ft.Container(expand=1.5,
-                             content=ft.Text(assessment.department if assessment.department else "-", color=row_colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
-                ft.Container(expand=1.5,
-                             content=ft.Text(assessment.project if assessment.project else "-", color=row_colors.text_primary, overflow=ft.TextOverflow.ELLIPSIS)),
-                ft.Container(expand=1, content=ft.Text(assessment_date, color=row_colors.text_primary)),
+                ft.Container(width=column_widths["id"], alignment=ft.alignment.center_left, content=ft.Text(assessment.id, color=row_colors.text_primary, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)),
                 ft.Container(
-                    expand=1,
-                    content=ft.Container(
-                        width=80,
-                        height=30,
-                        bgcolor=risk_color,
-                        border_radius=15,
-                        alignment=ft.alignment.center,
-                        content=ft.Text(assessment.risk_level, color="white", size=12, weight=ft.FontWeight.BOLD)
-                    )
-                ),
-                ft.Container(
-                    expand=0.8,
-                    content=ft.Text(
-                        f"{assessment.risk_score:.1f}" if assessment.risk_score is not None else "-",
-                        color=row_colors.text_primary,
+                    width=column_widths["audit_file"],
+                    alignment=ft.alignment.center_left,
+                    content=ft.Column(
+                        [
+                            ft.Text(assessment.title, color=row_colors.text_primary, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                            ft.Text(context_text, color=row_colors.text_secondary, size=11, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                        ],
+                        spacing=2,
                     ),
                 ),
                 ft.Container(
-                    expand=2,
+                    width=column_widths["audit_type"],
+                    alignment=ft.alignment.center_left,
+                    content=ft.Container(
+                        height=30,
+                        bgcolor=engagement_chip_color,
+                        border_radius=15,
+                        alignment=ft.alignment.center,
+                        padding=ft.padding.symmetric(horizontal=10),
+                        content=ft.Text(engagement_type_name, color="white", size=11, weight=ft.FontWeight.BOLD)
+                    )
+                ),
+                ft.Container(width=column_widths["date"], alignment=ft.alignment.center_left, content=ft.Text(assessment_date, color=row_colors.text_primary, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)),
+                ft.Container(
+                    width=column_widths["risk"],
+                    alignment=ft.alignment.center_left,
+                    content=ft.Column(
+                        [
+                            ft.Container(
+                                width=120,
+                                height=30,
+                                bgcolor=risk_color,
+                                border_radius=15,
+                                alignment=ft.alignment.center,
+                                content=ft.Text(assessment.risk_level, color="white", size=12, weight=ft.FontWeight.BOLD)
+                            ),
+                            ft.Text(score_text or "", color=row_colors.text_secondary, size=11)
+                        ],
+                        spacing=2,
+                    )
+                ),
+                ft.Container(
+                    width=column_widths["actions"],
+                    alignment=ft.alignment.center,
                     content=ft.Row([
-                        ft.ElevatedButton(
-                            text="View", 
+                        ft.IconButton(
+                            icon=Icons.VISIBILITY_OUTLINED,
+                            tooltip="View audit file",
+                            icon_color="#2563eb",
                             on_click=lambda e, aid=assessment.id: self.view_assessment(aid)
                         ),
-                        ft.Container(width=10),
-                        ft.ElevatedButton(
-                            text="Edit", 
+                        ft.IconButton(
+                            icon=Icons.EDIT_OUTLINED,
+                            tooltip="Edit audit file",
+                            icon_color="#2563eb",
                             on_click=lambda e, aid=assessment.id: self._safe_edit_click(e, aid)
                         ),
-                        ft.Container(width=10),
-                        ft.ElevatedButton(
-                            text="Delete", 
+                        ft.IconButton(
+                            icon=Icons.DELETE_OUTLINE,
+                            tooltip="Delete audit file",
+                            icon_color="#dc2626",
                             on_click=lambda e, aid=assessment.id: self.delete_assessment(aid)
                         )
-                    ], alignment=ft.MainAxisAlignment.CENTER)
+                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=8)
                 )
-            ], expand=True)
+            ], spacing=row_spacing)
         )
 
     def _safe_edit_click(self, e, assessment_id):
@@ -763,7 +875,7 @@ class AssessmentListView(BaseView):
             print(f"Traceback: {error_details}")
 
     def view_assessment(self, assessment_id):
-        """View assessment details"""
+        """View assessment details in the modern audit-file workspace."""
         print(f"DEBUG: view_assessment called with ID: {assessment_id}")
         print(f"DEBUG: Total assessments available: {len(self.assessments)}")
         
@@ -791,10 +903,23 @@ class AssessmentListView(BaseView):
             print(f"ERROR: No reference_id found for assessment {assessment_id}")
             self.show_error_dialog(f"Unable to load assessment details: No reference ID found")
             return
-        
-        print(f"DEBUG: Using reference_id: {reference_id} to call API")
-        
-        # Call the API to get full assessment details
+
+        print(f"DEBUG: Using reference_id: {reference_id} to open modern details route")
+
+        app = getattr(self.page, "APP_INSTANCE", None) if self.page else None
+        if app and hasattr(app, "on_navigate"):
+            app.on_navigate(
+                "assessments",
+                "details",
+                {
+                    "id": assessment_id,
+                    "reference_id": reference_id,
+                    "initial_tab": 0,
+                },
+            )
+            return
+
+        print("WARNING: APP_INSTANCE navigation unavailable, falling back to legacy detail loader")
         if self.page:
             self.page.run_task(self._load_assessment_details_async, reference_id, assessment_id)
 

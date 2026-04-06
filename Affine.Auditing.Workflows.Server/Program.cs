@@ -2,8 +2,16 @@ using Elsa.EntityFrameworkCore.Extensions;
 using Elsa.EntityFrameworkCore.Modules.Management;
 using Elsa.EntityFrameworkCore.Modules.Runtime;
 using Elsa.Extensions;
+using Affine.Auditing.Workflows.Server.Activities;
+using Affine.Auditing.Workflows.Server.Workflows;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
+builder.Services.AddHttpClient();
 
 // Add services to the container.
 builder.Services.AddElsa(elsa =>
@@ -31,6 +39,18 @@ builder.Services.AddElsa(elsa =>
     elsa.UseJavaScript();
     elsa.UseLiquid();
     elsa.UseCSharp();
+
+    elsa.AddActivity<SyncAuditWorkflowStateActivity>();
+    elsa.AddWorkflow<PlanningApprovalWorkflow>();
+    elsa.AddWorkflow<AnnualPlanApprovalWorkflow>();
+    elsa.AddWorkflow<ScopeApprovalWorkflow>();
+    elsa.AddWorkflow<ControlTestingWorkflow>();
+    elsa.AddWorkflow<WalkthroughReviewWorkflow>();
+    elsa.AddWorkflow<WorkingPaperReviewWorkflow>();
+    elsa.AddWorkflow<FindingApprovalWorkflow>();
+    elsa.AddWorkflow<ManagementResponseWorkflow>();
+    elsa.AddWorkflow<RemediationReviewWorkflow>();
+    elsa.AddWorkflow<FinalReportSignOffWorkflow>();
 });
 
 // Add CORS

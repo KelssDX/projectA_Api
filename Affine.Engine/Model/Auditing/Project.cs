@@ -14,6 +14,7 @@ namespace Affine.Engine.Model.Auditing
         public decimal? Budget { get; set; }
         public int? RiskLevelId { get; set; }
         public string? Manager { get; set; }
+        public int CollaboratorCount { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }

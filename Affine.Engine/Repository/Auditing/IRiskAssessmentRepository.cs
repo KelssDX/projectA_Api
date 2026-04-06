@@ -28,6 +28,11 @@ namespace Affine.Engine.Repository.Auditing
         Task<IEnumerable<Affine.Engine.Model.Auditing.Department>> GetDepartmentsAsync();
         // Lookup: Projects (full details)
         Task<IEnumerable<Affine.Engine.Model.Auditing.Project>> GetProjectsAsync();
+        Task<List<Affine.Engine.Model.Auditing.AuditCollaboratorRoleOption>> GetCollaboratorRolesAsync();
+        Task<List<Affine.Engine.Model.Auditing.AuditCollaboratorAssignment>> GetProjectCollaboratorsAsync(int projectId);
+        Task<List<Affine.Engine.Model.Auditing.AuditCollaboratorAssignment>> SaveProjectCollaboratorsAsync(int projectId, Affine.Engine.Model.Auditing.SaveAuditCollaboratorsRequest request, int? assignedByUserId, string assignedByName);
+        Task<List<Affine.Engine.Model.Auditing.AuditCollaboratorAssignment>> GetReferenceCollaboratorsAsync(int referenceId);
+        Task<List<Affine.Engine.Model.Auditing.AuditCollaboratorAssignment>> SaveReferenceCollaboratorsAsync(int referenceId, Affine.Engine.Model.Auditing.SaveAuditCollaboratorsRequest request, int? assignedByUserId, string assignedByName);
         // Get all assessments
         Task<IEnumerable<object>> GetAssessmentsAsync();
 

@@ -87,6 +87,8 @@ class RiskAssessmentApp:
                 self.auditing_client = AuditingAPIClient()
             except Exception:
                 self.auditing_client = None
+        if self.auditing_client is not None:
+            self.auditing_client.set_current_user(self.current_user)
         
         self.views = {
             "dashboard": DashboardView(self.page, self.auditing_client, self.on_navigate, self.current_user),
@@ -269,6 +271,8 @@ class RiskAssessmentApp:
     def logout(self, e):
         """Handle user logout"""
         self.current_user = None
+        if self.auditing_client is not None:
+            self.auditing_client.set_current_user(None)
         self.current_view = None
         self.views.clear()
         self.show_login()
